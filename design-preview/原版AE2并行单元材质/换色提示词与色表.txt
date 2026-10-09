@@ -1,0 +1,83 @@
+AE2US 六档并行处理单元 —— 原版贴图「换色」提示词与色表
+（做法同 NAE2：像素级只换色相，灰框/明暗/形状一律保留；NAE2 实测就是这么干的）
+
+■ 一、要跑几张、跑什么
+每档 2 张，六档共 12 张。源文件都在本文件夹里：
+  A. 源「1_未连接（未成型）/accelerator.png」→ 输出「parallel_<档位>x_unformed.png」
+     （用途：我方方块的"未成型"外观 + 物品栏图标）
+  B. 源「3_通电（合成中）/accelerator_light.png」→ 输出「parallel_<档位>x_light.png」
+     （用途：我方方块"成型"外观的发光十字层；亮/暗两态由我方后续合成）
+灰色件（light_base.png、ring_corner/hor/ver.png）不换色、不用跑。
+
+■ 二、六档目标色表（已避开 NAE2 的品红/紫/蓝与原版紫）
+档位    颜色   主色     说明
+16x     绿     #52D45F  沿用现有色相
+64x     青     #3FC9F0  沿用现有色相
+256x    青绿   #2FD0A5  原为蓝，改掉（避开 NAE2 蓝 #1F07F7）
+1024x   青柠   #B4E043  原为淡紫，改掉（避开 NAE2 紫 #9E08FF、品红 #FF00EA 与原版紫 #C704FF）
+2048x   金     #F2B33A  沿用现有色相
+4096x   红     #EF4A3E  沿用现有色相
+
+■ 三、提示词模板（每张替换 <> 内容，逐张跑）
+
+【中文版】
+这是一张 Minecraft 模组 Applied Energistics 2（应用能源2）的 16×16 像素方块贴图。请做"像素级换色"：只把图中的紫色调区域换成 <目标色名>（主色锚点 <主色HEX>），其余一切保持原样。
+要求：
+1) 只改色相：每个像素的深浅、亮暗、位置、形状都不能变（原图有很多档明暗，请逐像素保留层次，不要压成几档）；
+2) 原紫色系：主色 ≈ #C704FF（亮层那张 ≈ #BF00FF），连同它的亮/暗变体一起换；
+3) 灰色部分（银色金属边框、阴影、高光）一个像素都不许动；
+4) 输出仍是 16×16 的 PNG，硬边像素，不要抗锯齿、渐变、噪点，不要放大尺寸；
+5) 若源图是透明背景（accelerator_light.png 是一枚透明底"十字"图案）：请只换十字的颜色，背景保持透明。
+
+【English（若模型对英文效果更好）】
+This is a 16x16 pixel-art block texture from the Minecraft mod Applied Energistics 2. Recolor it pixel-by-pixel: change only the purple tones to <color name>, leaving EVERYTHING else untouched.
+- Only the hue changes; keep each pixel's original lightness/saturation exactly (do not flatten the shading steps).
+- Original purple main tone is about #C704FF (the light-layer texture: #BF00FF), plus its lighter/darker variants.
+- Do not touch the gray metal frame, shading or highlights.
+- Output must stay a 16x16 PNG with hard pixel edges: no anti-aliasing, no gradients, no noise, no upscaling.
+- If the source has a transparent background (accelerator_light.png is a transparent "plus/cross" shape): recolor only the cross, keep the background transparent.
+
+■ 四、配合生图模型的要点
+1. 一张一张跑，单图输入；不要把多张拼在一起喂。
+2. 尽量用模型的"编辑 / 局部重绘"能力，把重绘强度调低——目标是换色，不是重画。
+3. 输出检查清单：
+   - 尺寸还是 16×16？
+   - 透明背景还在吗（accelerator_light 那张）？
+   - 灰色边框/阴影和原图逐像素一致吗？（需要的话我可以帮你做像素级 diff）
+   - 预览放大请用"邻近采样（最近邻）"，看到硬边正方形像素才算正常；出现模糊、渐变、线条变形 = 跑偏，重跑或换模型。
+4. 兜底方案：纯换色可以离线脚本精确完成（像素级 100% 正确、零色差）。如果模型怎么调都跑偏，直接说要哪些颜色，我方出图。
+5. 12 张齐了之后发回（放 design-preview 下任意文件夹都行），我方负责：合成"成型亮/暗"两态、接进资源目录、更新模型与自检、构建新 jar 供实机测试。
+6. 说明：原版/NAE2 那种"成型后整机外沿一圈亮框、断开处不画"是代码渲染出来的（NAE2 为此重写了一套渲染）。我们这次先做换色贴图；要不要加动态边框是单独一件事，需要再说。
+
+■ 五、NAE2 参考数据（实测，供核对）
+- 做法：像素级换色——灰色像素与原版逐一相同，只有彩色像素色相被改。
+- 并行单元三档：4x 品红 #FF00EA、16x 紫 #9E08FF、64x 蓝 #1F07F7。
+- （顺带）存储方块：256k 红 #FF0817、16384k 绿 #8ED72F，另有金/黄档。
+- 原版加速器：本体紫 #C704FF、亮层 #BF00FF。
+
+■ 六、网页生图平台参数怎么填（此类平台的坑：不能直接输出 16×16，最小 1K）
+- 参考图片：必加 1 张，用「_参考图-放大版/」里对应源的那张（"未成型"用 accelerator 那张；发光层用 accelerator_light 那张）。一次只加一张，别把两张源图一起加。
+- 基准分辨率：1K（不要 2K/4K）；图像比例：1:1；自动尺寸开不开都行，保证是方形即可。
+- 质量：模型默认；数量：1（先试跑，确认模型配合后再批量）。
+- 提示词：用下面的"网格版"——输出是 1K 起步，让它按 16×16 网格放大画，我方拿回来再精确还原成 16×16。
+- 先只跑 1 张试跑（建议 16x 绿），发回来验收：网格是否整齐、灰框是否原样、有无渐变模糊——通过后再跑其余 11 张。
+
+■ 七、网格版提示词（网页平台用；替换 <> 内容）
+
+【中文】
+参考图是 Minecraft 模组 Applied Energistics 2（应用能源2）的 16×16 像素贴图（已放大 64 倍显示，每个方格 = 1 个像素）。请做"像素级换色"，必须保持像素网格：
+1) 输出 1024×1024，按 16×16 网格排布，每格为 64×64 的纯色方块，边缘锐利：无抗锯齿、无渐变、无噪点；
+2) 只把紫色调换成 <目标色名>（主色 ≈ <主色HEX>）；逐格保留原有深浅层次（原图有多个明暗档，不要压平、不要引入新颜色）；
+3) 灰色金属边框、阴影、高光等所有非紫色格逐格保持原样、位置不动；
+4) 不要新增任何细节、纹理、光影，不要重画形状；每格颜色必须均匀单一；
+5) 画面比例 1:1。
+（若源图为 accelerator_light）追加：参考图中十字以外的区域是透明的——模型支持透明输出就保持透明；不支持就把这些区域画成纯品红 #FF00FF 的底。
+
+【English · grid version】
+The reference image is a 16x16 pixel-art block texture from the Minecraft mod Applied Energistics 2, shown upscaled 64x (each square = one pixel). Recolor it pixel-by-pixel while keeping the pixel grid:
+1) Output 1024x1024 as a 16x16 grid; each cell is a solid 64x64 square of a single color with hard edges: no anti-aliasing, no gradients, no noise.
+2) Change only the purple tones to <color name> (main tone ~ <HEX>). Keep each cell's original shading level - do not flatten the shading or introduce new colors.
+3) All non-purple cells (gray metal frame, shading, highlights) must stay identical and unmoved.
+4) No new detail, texture or lighting; do not redraw shapes; each cell must be one uniform color.
+5) Aspect ratio 1:1.
+(For accelerator_light only) Areas outside the cross are transparent in the reference: keep them transparent if your model supports it; otherwise fill them with solid magenta #FF00FF.

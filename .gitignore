@@ -1,0 +1,17 @@
+# 构建产物 / 本地运行环境
+build/
+.gradle/
+run/
+run-server/
+logs/
+
+# 第三方参考源码与不可重分发的文件
+.ref/
+其他仓库的源码/
+libs/
+
+# 内部记录与本地产物
+交接存档存放/
+mods输出/
+AE2US_视频讲解稿.md
+.zcodeignore

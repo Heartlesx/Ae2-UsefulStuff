@@ -1,0 +1,8 @@
+{
+    "variants": {
+        "formed=false,powered=false": { "model": "ae2us:crafting_storage_4096k_unformed" },
+        "formed=false,powered=true": { "model": "ae2us:crafting_storage_4096k_unformed" },
+        "formed=true,powered=false": { "model": "ae2us:crafting_storage_4096k_formed_off" },
+        "formed=true,powered=true": { "model": "ae2us:crafting_storage_4096k_formed_on" }
+    }
+}

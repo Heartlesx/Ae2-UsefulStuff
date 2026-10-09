@@ -1,0 +1,9 @@
+{
+  "parent": "block/cube_bottom_top",
+  "textures": {
+    "particle": "ae2us:blocks/storage_alarm_side_alert",
+    "bottom": "ae2us:blocks/storage_alarm_bottom",
+    "top": "ae2us:blocks/storage_alarm_top_alert",
+    "side": "ae2us:blocks/storage_alarm_side_alert"
+  }
+}

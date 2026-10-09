@@ -1,0 +1,19 @@
+{
+  "package": "com.extrarawstyle.ae2us.mixin",
+  "required": false,
+  "minVersion": "0.8",
+  "compatibilityLevel": "JAVA_8",
+  "plugin": "com.extrarawstyle.ae2us.mixin.FeatureMixinPlugin",
+  "mixins": [
+    "FluidCraftPatternCategoryMixin",
+    "FluidPatternTerminalCategoryMixin"
+  ],
+  "client": [
+    "client.RecipeLayoutMixin",
+    "client.RecipeTransferCategoryMixin",
+    "compat.RecipeTransferButtonCompatMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

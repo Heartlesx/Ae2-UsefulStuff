@@ -1,0 +1,6 @@
+{
+    "parent": "block/cube_all",
+    "textures": {
+        "all": "ae2us:blocks/crafting_storage_512k_unformed"
+    }
+}

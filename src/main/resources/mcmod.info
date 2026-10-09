@@ -1,0 +1,23 @@
+[
+  {
+    "modid": "ae2us",
+    "name": "AE2 Useful Stuff",
+    "description": "AE2 实用设置：智能阻挡。同一配方可以持续给机器补料，其它配方要等当前这批东西消化完再发，避免配方串在一起浪费并行。需要在接口里同时开启原版阻挡。",
+    "version": "${version}",
+    "mcversion": "${mcversion}",
+    "url": "",
+    "updateUrl": "",
+    "authorList": [
+      "Extra_RawStyle"
+    ],
+    "credits": "",
+    "logoFile": "",
+    "screenshots": [],
+    "license": "MIT",
+    "parent": "",
+    "dependencies": [
+      "appliedenergistics2",
+      "mixinbooter"
+    ]
+  }
+]

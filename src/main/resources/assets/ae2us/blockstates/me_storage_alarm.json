@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "alert=false,lit=false": { "model": "ae2us:me_storage_alarm_off" },
+    "alert=false,lit=true": { "model": "ae2us:me_storage_alarm_on" },
+    "alert=true,lit=false": { "model": "ae2us:me_storage_alarm_off" },
+    "alert=true,lit=true": { "model": "ae2us:me_storage_alarm_alert" }
+  }
+}

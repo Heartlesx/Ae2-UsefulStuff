@@ -1,0 +1,228 @@
+buildscript {
+    repositories {
+        maven { url = 'https://maven.minecraftforge.net/' }
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'net.minecraftforge.gradle:ForgeGradle:3.+'
+    }
+}
+
+apply plugin: 'net.minecraftforge.gradle'
+
+version = mod_version
+group = mod_group_id
+archivesBaseName = mod_id
+
+sourceCompatibility = targetCompatibility = compileJava.sourceCompatibility = compileJava.targetCompatibility = '1.8'
+
+minecraft {
+    // 1.12.2 用 MCP 命名，社区标准是 stable 39。
+    mappings channel: 'stable', version: '39-1.12'
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+        }
+        server {
+            workingDirectory project.file('run-server')
+        }
+    }
+}
+
+repositories {
+    maven { url = 'https://maven.minecraftforge.net/' }
+    flatDir { dirs 'libs' }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+    // ForgeGradle 3 + Forge 1.12.2-14.23.5.2854+ 的已知问题：新版 mergetool 会让 FML 在
+    // 注册自己的网络通道时抛 NullPointerException。只在开发环境出现，不影响产出的 jar。
+    implementation("net.minecraftforge:mergetool:0.2.3.3") { force = true }
+
+    // AE2、MixinBooter、JEI（整合包用的是 HadEnoughItems）只在编译期使用，运行时由整合包提供，
+    // 三个 jar 都取自目标整合包 mods 目录。
+    compileOnly fg.deobf('local:ae2-uel:v0.56.7')
+    compileOnly files('libs/mixinbooter-10.7.jar')
+    testImplementation files('libs/mixinbooter-10.7.jar')
+    compileOnly files('libs/HadEnoughItems_1.12.2-4.32.0.jar')
+    // 自检要读真实类文件判断版本差异（RecipeTransferButton.init 在 4.35.0 被改名成 update），
+    // 也要加载补丁类核对它的 @Mixin 目标，所以 HEI 必须同时出现在测试运行期类路径上。
+    testImplementation files('libs/HadEnoughItems_1.12.2-4.32.0.jar')
+    compileOnly files('libs/mousetweaks-1.12.2-3.1.5.jar')
+    // TheOneProbe 仅编译期使用（库存报警器 TOP 集成），运行时由整合包提供，不捆绑。
+    compileOnly files('libs/theoneprobe-1.12-1.4.28.jar')
+    compileOnly files('libs/gregtech-1.12.2-master-2901.jar')
+    testImplementation files('libs/gregtech-1.12.2-master-2901.jar')
+    testImplementation fg.deobf('local:ae2-uel:v0.56.7')
+}
+
+// mcmod.info 里的 ${version} / ${mcversion} 需要在这里展开。
+processResources {
+    inputs.property 'version', project.version
+    inputs.property 'mcversion', project.minecraft_version
+    filesMatching('mcmod.info') {
+        expand 'version': project.version, 'mcversion': project.minecraft_version
+    }
+}
+
+jar {
+    archiveName = "${mod_id}-${mod_version}-forge-${minecraft_version}.jar"
+
+    manifest {
+        attributes([
+                'Specification-Title'     : mod_id,
+                'Specification-Vendor'    : mod_authors,
+                'Specification-Version'   : '1',
+                'Implementation-Title'    : project.name,
+                'Implementation-Version'  : project.version,
+                'Implementation-Vendor'   : mod_authors,
+                // 早注册 mixin 配置的 coremod 入口；MixinBooter 通过它收集 mixins.ae2us.json。
+                'FMLCorePlugin'           : 'com.extrarawstyle.ae2us.EarlyMixinLoader',
+                'FMLCorePluginContainsFMLMod': 'true',
+                'ForceLoadAsMod'          : 'true'
+        ])
+    }
+}
+jar.finalizedBy('reobfJar')
+
+// 重混淆完成后复制一份到工程目录的 mods输出 下，方便手工放进整合包（不自动写进游戏目录）。
+// 用复制而不是把它设成 jar 的输出目录：否则 Gradle 的 stale output 清理会把这里的历史 jar 删掉。
+tasks.whenTaskAdded { task ->
+    if (task.name == 'reobfJar') {
+        task.doLast {
+            project.copy {
+                from project.tasks.jar.archivePath
+                into project.file('mods输出')
+            }
+        }
+    }
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+    // 本工程不生成 refmap，mixin 注解里写的是运行时名字（MC 的 SRG 名，例如 func_73866_w_），
+    // 而 Mixin 的注解处理器会拿开发环境（MCP 名）去校验这些目标，必然报“找不到”。关掉注解处理即可。
+    options.compilerArgs << '-proc:none'
+}
+
+// FG3 defaults to an uncached remapper; use the compatible tool already present locally.
+tasks.withType(net.minecraftforge.gradle.userdev.tasks.RenameJarSrg2Mcp) {
+    tool = 'net.minecraftforge:installertools:1.3.2:fatjar'
+}
+
+task verifyPatternUploadData(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.PatternUploadDataSelfCheck'
+}
+
+check.dependsOn verifyPatternUploadData
+
+task verifyPatternUploadTargets(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.PatternUploadTargetsSelfCheck'
+}
+
+check.dependsOn verifyPatternUploadTargets
+
+task verifyGenericCircuits(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.GenericCircuitSelfCheck'
+}
+
+check.dependsOn verifyGenericCircuits
+
+task verifyPatternCategory(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.PatternCategorySelfCheck'
+}
+
+check.dependsOn verifyPatternCategory
+
+task verifyFeatureConfig(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.FeatureConfigSelfCheck'
+}
+
+check.dependsOn verifyFeatureConfig
+
+task verifyFilteredSubnet(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.FilteredSubnetSelfCheck'
+}
+
+check.dependsOn verifyFilteredSubnet
+
+task verifyOreExport(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.OreExportSelfCheck'
+}
+
+check.dependsOn verifyOreExport
+
+task verifyStorageAlarm(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.StorageAlarmSelfCheck'
+}
+
+check.dependsOn verifyStorageAlarm
+
+task verifyPatternRefill(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.PatternRefillSelfCheck'
+}
+
+check.dependsOn verifyPatternRefill
+
+task verifyHeiCompat(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.HeiCompatSelfCheck'
+    // 自检要读 libs 下两个 HEI 版本的样本 jar，路径随工程走，不依赖启动目录。
+    systemProperty 'ae2us.libs', project.file('libs').absolutePath
+}
+
+check.dependsOn verifyHeiCompat
+
+task verifyCraftedItemPin(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.CraftedItemPinSelfCheck'
+}
+
+check.dependsOn verifyCraftedItemPin
+
+task verifyParallelUnit(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.ParallelUnitSelfCheck'
+}
+
+check.dependsOn verifyParallelUnit
+
+task verifyLocateHighlight(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.client.LocateHighlightSelfCheck'
+}
+
+check.dependsOn verifyLocateHighlight
+
+task verifyPatternPreview(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.PatternPreviewSelfCheck'
+}
+
+check.dependsOn verifyPatternPreview
+
+task verifyStorageCell(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.StorageCellSelfCheck'
+}
+
+check.dependsOn verifyStorageCell
+
+task verifyCraftingStorage(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.CraftingStorageSelfCheck'
+}
+
+check.dependsOn verifyCraftingStorage

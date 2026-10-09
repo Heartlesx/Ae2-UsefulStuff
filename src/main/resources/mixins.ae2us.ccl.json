@@ -1,0 +1,14 @@
+{
+  "package": "com.extrarawstyle.ae2us.mixin",
+  "required": false,
+  "minVersion": "0.8",
+  "compatibilityLevel": "JAVA_8",
+  "plugin": "com.extrarawstyle.ae2us.mixin.FeatureMixinPlugin",
+  "mixins": [],
+  "client": [
+    "client.CCRenderItemPatternPreviewMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

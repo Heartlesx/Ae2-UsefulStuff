@@ -1,0 +1,8 @@
+{
+    "variants": {
+        "formed=false,powered=false": { "model": "ae2us:parallel_2048x_unformed" },
+        "formed=false,powered=true": { "model": "ae2us:parallel_2048x_unformed" },
+        "formed=true,powered=false": { "model": "ae2us:parallel_2048x_formed_off" },
+        "formed=true,powered=true": { "model": "ae2us:parallel_2048x_formed_on" }
+    }
+}

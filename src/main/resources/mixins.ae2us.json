@@ -1,0 +1,39 @@
+{
+  "package": "com.extrarawstyle.ae2us.mixin",
+  "required": true,
+  "minVersion": "0.8",
+  "compatibilityLevel": "JAVA_8",
+  "plugin": "com.extrarawstyle.ae2us.mixin.FeatureMixinPlugin",
+  "mixins": [
+    "ContainerInterfaceMixin",
+    "ContainerMEMonitorableMixin",
+    "DualityInterfaceInvoker",
+    "SmartBlockingDataMixin",
+    "DualityInterfaceMixin",
+    "NetworkMonitorCraftablesMixin",
+    "FilteredNetworkInventoryMixin",
+    "FilteredMEInventoryMixin",
+    "PatternEncoderAccessor",
+    "PatternEncoderCategoryMixin",
+    "PatternRefillHostMixin",
+    "PatternRefillContainerMixin",
+    "PacketJEIRecipeCategoryMixin",
+    "ContainerMEMonitorablePinMixin",
+    "CraftingCPUClusterMixin",
+    "CellTypeLimitMixin"
+  ],
+  "client": [
+    "client.AEBaseGuiMixin",
+    "client.AEBaseGuiPinMixin",
+    "client.GuiCraftConfirmMixin",
+    "client.GuiInterfaceMixin",
+    "client.GuiMEMonitorableUploadMixin",
+    "client.GuiScreenAccessor",
+    "client.GuiUpgradeableAccessor",
+    "client.ItemRepoPinMixin",
+    "client.RenderItemPatternPreviewMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
