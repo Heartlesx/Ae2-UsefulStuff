@@ -917,6 +917,11 @@ public final class PatternUploadClient {
                 && ((GuiContainer) gui).inventorySlots instanceof ContainerPatternEncoder;
     }
 
+    /** 覆盖层打开期间该屏幕的鼠标输入全部归覆盖层；HEI 的 handleMouseEvent 守卫读这里（见 InputHandlerMixin）。 */
+    public static boolean blocksHeiMouseInput(final GuiScreen gui) {
+        return open && gui == owner;
+    }
+
     private static String localizedName(final String name) {
         if (I18n.hasKey(name)) {
             return I18n.format(name);

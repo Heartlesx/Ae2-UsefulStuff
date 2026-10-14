@@ -226,3 +226,12 @@ task verifyCraftingStorage(type: JavaExec) {
 }
 
 check.dependsOn verifyCraftingStorage
+
+task verifyGuiOverlayFixes(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.client.GuiOverlayFixSelfCheck'
+    // 自检要读 libs 下 HEI 4.35.0 样本 jar（点击穿透守卫的前提事实），路径随工程走。
+    systemProperty 'ae2us.libs', project.file('libs').absolutePath
+}
+
+check.dependsOn verifyGuiOverlayFixes

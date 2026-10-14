@@ -37,6 +37,8 @@ public final class FeatureConfigSelfCheck {
             check(FeatureConfig.enableSmartBlocking && FeatureConfig.enableTerminalCraftableMarks
                     && FeatureConfig.enableRecipeCraftableMarks && FeatureConfig.autoDisableRandomComplementConflicts,
                     "all features and auto avoidance default on");
+            check(new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8).contains("crafted item pin"),
+                    "RandomComplement comment names the crafted item pin");
 
             final Configuration config = new Configuration(file);
             config.load();

@@ -60,7 +60,7 @@ public final class FeatureConfig {
                         + "Pinned while the job runs and for a few minutes after it finishes.")
                 .setRequiresMcRestart(true).getBoolean();
         autoDisableRandomComplementConflicts = config.get("compatibility", "autoDisableRandomComplementConflicts", true,
-                "Automatically disable AE2US smart blocking and both craftable marks when RandomComplement is installed. Set false to use the manual feature switches. Does not change saved settings.")
+                "Automatically disable AE2US smart blocking, both craftable marks and the crafted item pin when RandomComplement is installed. Set false to use the manual feature switches. Does not change saved settings.")
                 .setRequiresMcRestart(true).getBoolean();
         config.addCustomCategoryComment("features", "All changes require a game/server restart. Keep smart blocking consistent on client and server.");
         if (config.hasChanged()) {

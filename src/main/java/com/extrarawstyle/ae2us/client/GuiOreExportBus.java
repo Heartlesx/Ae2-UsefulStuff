@@ -10,6 +10,7 @@ import com.extrarawstyle.ae2us.orebus.OreExportRules;
 import mezz.jei.api.gui.IGhostIngredientHandler;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiTextField;
+import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.resources.I18n;
 import net.minecraft.inventory.ClickType;
 import net.minecraft.inventory.Slot;
@@ -81,8 +82,9 @@ public final class GuiOreExportBus extends AEBaseGui implements IJEIGhostIngredi
     private void buttons() {
         this.buttonList.clear();
         if (this.choices != null) {
-            this.button(20, 48, 191, 96, tr("confirm"));
-            this.button(21, 166, 191, 96, tr("cancel"));
+            final int buttonY = this.dialogListY() + this.dialogRows() * 18 + 4 + 10 - this.guiTop;
+            this.button(20, 52, buttonY, 96, tr("confirm"));
+            this.button(21, 162, buttonY, 96, tr("cancel"));
             return;
         }
         final OreBusNetwork.State state = this.container.state;
@@ -107,6 +109,16 @@ public final class GuiOreExportBus extends AEBaseGui implements IJEIGhostIngredi
             if (button.id == 7) { button.enabled = state != null && state.redstoneCard; }
             if (button.id == 12) { button.enabled = !this.partitionPending; }
         }
+    }
+
+    /** 标签选择对话框可见行数：随名单长度自适应，最少 2 行、最多 8 行（再多滚轮翻页）。 */
+    private int dialogRows() {
+        return this.choices == null ? 2 : Math.max(2, Math.min(8, this.choices.length));
+    }
+
+    /** 对话框名单区的屏幕 Y：整个面板按行数自适应高度并垂直居中。 */
+    private int dialogListY() {
+        return this.guiTop + (this.ySize - (this.dialogRows() * 18 + 4 + 62)) / 2 + 26;
     }
 
     private void send(final int operation, final int index, final String text) {
@@ -233,10 +245,11 @@ public final class GuiOreExportBus extends AEBaseGui implements IJEIGhostIngredi
             for (final GuiButton control : this.buttonList) {
                 if (control.mousePressed(this.mc, x, y)) { this.actionPerformed(control); return; }
             }
-            final int row = (y - this.guiTop - 53) / 16 + this.choiceOffset;
-            if (x >= this.guiLeft + 31 && x < this.guiLeft + 278 && y >= this.guiTop + 53
-                    && y < this.guiTop + 181 && row < this.choices.length) {
-                this.checked[row] = !this.checked[row];
+            final int listY = this.dialogListY();
+            if (x >= this.guiLeft + 30 && x < this.guiLeft + 280 && y >= listY + 2
+                    && y < listY + 2 + this.dialogRows() * 18) {
+                final int row = (y - listY - 2) / 18 + this.choiceOffset;
+                if (row < this.choices.length) { this.checked[row] = !this.checked[row]; }
             }
             return;
         }
@@ -398,7 +411,6 @@ public final class GuiOreExportBus extends AEBaseGui implements IJEIGhostIngredi
             drawRect(x + slot.xPos - 1, y + slot.yPos - 1, x + slot.xPos + 17, y + slot.yPos + 17, 0xff777777);
             drawRect(x + slot.xPos, y + slot.yPos, x + slot.xPos + 16, y + slot.yPos + 16, 0xffeeeeee);
         }
-        if (!this.marked.isEmpty()) { this.itemRender.renderItemAndEffectIntoGUI(this.marked, x + 218, y + 106); }
         if (this.choices == null) {
             this.input.drawTextBox();
             if (this.priorityInput != null) { this.priorityInput.drawTextBox(); }
@@ -431,6 +443,9 @@ public final class GuiOreExportBus extends AEBaseGui implements IJEIGhostIngredi
         this.fontRenderer.drawString(tr(this.container.storage == null ? "redstone" : "display"), 211, 73, 0x333333);
         if (this.container.storage != null) { this.fontRenderer.drawString(tr("priority"), 211, 178, 0x333333); }
         this.fontRenderer.drawString(tr("mark"), 241, 110, 0x284528);
+        // 物品图标走 AEBaseGui.drawItem（GUI 标准光照 + 白颜色）：手搓 renderItemAndEffectIntoGUI
+        // 会继承绘制前的遗留 GL 颜色与光照状态，图标比槽位物品暗一截且随场景时暗时亮。
+        if (!this.marked.isEmpty()) { this.drawItem(218, 106, this.marked); }
         this.fontRenderer.drawString(I18n.format("container.inventory"), 8, 144, 0x333333);
         this.fontRenderer.drawString(tr("upgrades"), 205, 144, 0x333333);
         if (!this.status.isEmpty()) {
@@ -443,15 +458,59 @@ public final class GuiOreExportBus extends AEBaseGui implements IJEIGhostIngredi
     public void drawScreen(final int mouseX, final int mouseY, final float partialTicks) {
         super.drawScreen(mouseX, mouseY, partialTicks);
         if (this.choices != null) {
-            drawRect(this.guiLeft, this.guiTop, this.guiLeft + this.xSize, this.guiTop + this.ySize, 0xcc202020);
-            drawRect(this.guiLeft + 22, this.guiTop + 22, this.guiLeft + 288, this.guiTop + 216, 0xffd6d6d6);
-            this.fontRenderer.drawString(tr("select_ores"), this.guiLeft + 31, this.guiTop + 31, 0x253925);
-            for (int i = 0; i < 8 && i + this.choiceOffset < this.choices.length; i++) {
+            // 到这里时 vanilla 已为"光标上的物品"重新打开了标准光照（GuiContainer.drawScreen 帧尾
+            // enableStandardItemLighting 且不再关闭）。不先关掉，对话框所有平面绘制（面板、复选
+            // 框、按钮）都会被光照乘暗——环境光 0.4 + 方向光 ≈0.11，面板 0xd6 渲染成 0x6d。
+            RenderHelper.disableStandardItemLighting();
+            final int rows = this.dialogRows();
+            final int listY = this.dialogListY();
+            final int panelX = this.guiLeft + 22;
+            final int panelY = listY - 26;
+            final int panelH = rows * 18 + 4 + 62;
+            // 框体：窗口同款灰底 + 深墨绿描边（窗口本身没有边框，不描一圈会和窗口糊在一起）。
+            drawRect(panelX - 1, panelY - 1, panelX + 267, panelY + panelH + 1, 0xff383e38);
+            drawRect(panelX, panelY, panelX + 266, panelY + panelH, 0xffc6c6c6);
+            this.fontRenderer.drawString(tr("select_ores"), panelX + 10, panelY + 10, 0x253925);
+            if (!this.marked.isEmpty() && !this.partitionDialog) {
+                // 标题行右侧标明正在给哪个物品选矿典，防手滑选错对象。
+                final int nameRight = panelX + 238;
+                final int nameMax = nameRight - panelX - 18 - this.fontRenderer.getStringWidth(tr("select_ores"));
+                final String name = this.fontRenderer.trimStringToWidth(this.marked.getDisplayName(), Math.max(20, nameMax));
+                this.fontRenderer.drawString(name, nameRight - this.fontRenderer.getStringWidth(name), panelY + 10, 0x333333);
+                this.drawItem(panelX + 242, panelY + 6, this.marked);
+                RenderHelper.disableStandardItemLighting();   // drawItem 开了 GUI 光照，名单区绘制要关回去
+            }
+            // 名单区：与左列名单同款深墨绿底 + 白字，勾选/悬停用名单里那条选中绿。
+            final int fieldX = panelX + 8;
+            final int fieldW = 250;
+            drawRect(fieldX, listY, fieldX + fieldW, listY + rows * 18 + 4, 0xff383e38);
+            if (this.choices.length > 8) {
+                final int trackX = fieldX + fieldW - 9;
+                final int trackTop = listY + 2;
+                final int trackH = rows * 18;
+                drawRect(trackX, trackTop, trackX + 7, trackTop + trackH, 0xff202720);
+                final int thumb = Math.max(6, trackH * 8 / this.choices.length);
+                final int thumbTop = trackTop + (trackH - thumb) * this.choiceOffset / (this.choices.length - 8);
+                drawRect(trackX, thumbTop, trackX + 7, thumbTop + thumb, 0xff98ad92);
+            }
+            final int textMax = fieldW - 28 - (this.choices.length > 8 ? 10 : 0);
+            for (int i = 0; i < rows; i++) {
                 final int index = i + this.choiceOffset;
-                final int y = this.guiTop + 53 + i * 16;
-                drawRect(this.guiLeft + 31, y, this.guiLeft + 42, y + 11, 0xff444444);
-                if (this.checked[index]) { this.fontRenderer.drawString("x", this.guiLeft + 34, y + 1, 0x88ee88); }
-                this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(this.choices[index], 227), this.guiLeft + 48, y + 1, 0x222222);
+                if (index >= this.choices.length) { break; }
+                final int rowY = listY + 2 + i * 18;
+                final boolean hovered = mouseX >= fieldX && mouseX < fieldX + fieldW
+                        && mouseY >= rowY && mouseY < rowY + 18;
+                if (this.checked[index]) {
+                    drawRect(fieldX + 2, rowY, fieldX + fieldW - 2, rowY + 18, 0xff456e45);
+                } else if (hovered) {
+                    drawRect(fieldX + 2, rowY, fieldX + fieldW - 2, rowY + 18, 0x60456e45);
+                }
+                final int boxY = rowY + 4;
+                drawRect(fieldX + 4, boxY, fieldX + 15, boxY + 11, 0xff98ad92);
+                drawRect(fieldX + 5, boxY + 1, fieldX + 14, boxY + 10, this.checked[index] ? 0xffe0e9dc : 0xff383e38);
+                if (this.checked[index]) { this.fontRenderer.drawString("x", fieldX + 7, boxY + 2, 0x367a36); }
+                this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(this.choices[index], textMax),
+                        fieldX + 24, rowY + 5, 0xffffff);
             }
             for (final GuiButton button : this.buttonList) { button.drawButton(this.mc, mouseX, mouseY, partialTicks); }
         } else {

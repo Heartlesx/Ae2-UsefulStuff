@@ -135,9 +135,9 @@ AE2UEL 自带"按住 Shift 时把编码样板显示成它的产物"的预览。�
 | `features.enableRecipeCraftableMarks` | HEI 配方页的可合成标记 |
 | `features.enablePatternRefill` | 样板终端的空白样板自动补充按钮与补货逻辑 |
 | `features.enableCraftedItemPin` | 合成产出在 ME 终端物品列表里置顶（含青色角标） |
-| `compatibility.autoDisableRandomComplementConflicts` | 检测到 RandomComplement 时自动避让上述四项重复功能 |
+| `compatibility.autoDisableRandomComplementConflicts` | 检测到 RandomComplement 时自动避让四项重复功能：智能阻挡、终端可合成标记、HEI 配方页可合成标记、合成产出置顶 |
 
-若安装 RandomComplement 且自动避让保持开启，以上**四项功能的有效状态**自动关闭，以减少重复修改 AE2 行为的冲突；配置文件里的手动值不会被改写，接口已保存的智能阻挡设置也不会被删除。移除 RandomComplement 并重启后，手动开关为开启的功能可恢复。关闭自动避让时，改由四项手动开关决定是否加载。
+若安装 RandomComplement 且自动避让保持开启，以上**四项功能的有效状态**自动关闭，以减少重复修改 AE2 行为的冲突；配置文件里的手动值不会被改写，接口已保存的智能阻挡设置也不会被删除。移除 RandomComplement 并重启后，手动开关为开启的功能可恢复。关闭自动避让时，改由四项手动开关决定是否加载。开机后可看游戏日志（`logs/latest.log`）里 `AE2US` 的 `Feature switches:` 一行自查：`RandomComplement=true` 即本次启动已检测到 RC、四项已自动避让；`false` 表示未检测到（RC 未装或已被禁用）。
 
 自动上传、撤回、定位、分类捕获、通用电路处理、缺料排序、库存报警器、空白样板自动补充及子网读取修复**不属于这四项自动关闭的功能**。这也不代表所有与 RandomComplement 同时安装的组合都已完成实机兼容验证。
 

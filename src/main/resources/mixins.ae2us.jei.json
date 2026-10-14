@@ -9,6 +9,7 @@
     "FluidPatternTerminalCategoryMixin"
   ],
   "client": [
+    "client.InputHandlerMixin",
     "client.RecipeLayoutMixin",
     "client.RecipeTransferCategoryMixin",
     "compat.RecipeTransferButtonCompatMixin"
