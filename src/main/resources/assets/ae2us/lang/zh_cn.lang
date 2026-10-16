@@ -120,6 +120,7 @@ ae2us.rename.cleared=已清除 %s 个接口的自定义名
 ae2us.rename.cleared_stale=已清除 %s 个接口的自定义名；%s 条映射指向旧名称
 ae2us.rename.unavailable=接口组已变化或不在当前网络
 ae2us.rename.denied=没有修改接口的权限
+ae2us.rename.unsupported=这组接口不支持改名（GT 系样板总线的名称跟随机器）
 tile.ae2us.parallel_unit_16.name=§a16x§r并行处理单元
 tile.ae2us.parallel_unit_64.name=§b64x§r并行处理单元
 tile.ae2us.parallel_unit_256.name=§9256x§r并行处理单元

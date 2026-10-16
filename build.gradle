@@ -56,6 +56,13 @@ dependencies {
     compileOnly files('libs/theoneprobe-1.12-1.4.28.jar')
     compileOnly files('libs/gregtech-1.12.2-master-2901.jar')
     testImplementation files('libs/gregtech-1.12.2-master-2901.jar')
+    // 新版 GT 的 GUI 链依赖 ModularUI（MetaTileEntity 的类型层级里有它），编译 GT 相关类型需要。
+    compileOnly files('libs/modularui-3.0.6.jar')
+    testImplementation files('libs/modularui-3.0.6.jar')
+    // GTLCore（整合包自带核心）同样只编译期使用：样板输入总线/总成的发现桥走它。
+    // 运行期对它的引用都被类名闸门挡着（机器不在场时那段代码不会执行），不产生依赖。
+    compileOnly files('libs/gtlitecore-1.0.0.jar')
+    testImplementation files('libs/gtlitecore-1.0.0.jar')
     testImplementation fg.deobf('local:ae2-uel:v0.56.7')
 }
 
@@ -235,3 +242,12 @@ task verifyGuiOverlayFixes(type: JavaExec) {
 }
 
 check.dependsOn verifyGuiOverlayFixes
+
+task verifyGtlcPatternBus(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.GtlcPatternBusSelfCheck'
+    // 自检要读 libs 下的 GTLCore / GT 样本 jar（发现桥的前提事实），路径随工程走。
+    systemProperty 'ae2us.libs', project.file('libs').absolutePath
+}
+
+check.dependsOn verifyGtlcPatternBus

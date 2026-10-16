@@ -21,6 +21,10 @@ import appeng.parts.AEBasePart;
 import appeng.parts.misc.PartInterface;
 import appeng.tile.misc.TileInterface;
 import appeng.tile.networking.TileCableBus;
+import gregtech.api.metatileentity.MetaTileEntity;
+import gregtech.api.metatileentity.MetaTileEntityHolder;
+import gregtech.api.metatileentity.interfaces.IGregTechTileEntity;
+import gregtechlite.gtlitecore.common.metatileentity.part.PartMachineMECraftingPatternInputHatch;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
@@ -33,6 +37,7 @@ import net.minecraft.util.text.TextComponentTranslation;
 import net.minecraft.util.text.TextFormatting;
 import net.minecraft.util.text.event.ClickEvent;
 import net.minecraft.util.text.event.HoverEvent;
+import net.minecraft.world.IWorldNameable;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
@@ -57,6 +62,9 @@ public final class PatternUploadService {
 
     private static final ResourceLocation FLUID_PACKET = new ResourceLocation("ae2fc", "fluid_packet");
     private static final ResourceLocation FLUID_DROP = new ResourceLocation("ae2fc", "fluid_drop");
+    /** GTLCore 的 ME 样板输入总线 / 总成：网格里的机器是 GT 机器壳，真正的接口宿主藏在 MTE 里。 */
+    private static final String GTLITE_PATTERN_HATCH =
+            "gregtechlite.gtlitecore.common.metatileentity.part.PartMachineMECraftingPatternInputHatch";
     private static final Map<UUID, UndoRecord> LAST_UPLOADS = new HashMap<>();
     private static final Map<UUID, Map<String, TargetInfo.MemberInfo>> LOCATE_LINKS = new HashMap<>();
     private static final Comparator<Target> TARGET_ORDER = Comparator.comparingInt((Target target) -> target.dimension)
@@ -157,20 +165,26 @@ public final class PatternUploadService {
             return null;
         }
         final TileEntity tile = world.getTileEntity(member.pos);
-        final IGridHost host;
-        if (member.side == 6 && tile instanceof IInterfaceHost && tile instanceof IGridHost) {
-            host = (IGridHost) tile;
-        } else if (member.side >= 0 && member.side < 6 && tile instanceof TileCableBus) {
+        final IInterfaceHost host;
+        if (member.side >= 0 && member.side < 6 && tile instanceof TileCableBus) {
             final IPart part = ((TileCableBus) tile).getPart(AEPartLocation.fromOrdinal(member.side));
-            host = part instanceof IInterfaceHost && part instanceof IGridHost ? (IGridHost) part : null;
+            host = part instanceof IGridHost ? hostOf((IGridHost) part) : null;
+        } else if (member.side == 6 && tile instanceof IGridHost) {
+            host = hostOf((IGridHost) tile);
         } else {
             host = null;
         }
-        if (host == null || !supported(host)) {
+        if (host == null) {
             return null;
         }
-        final IGridNode node = member.side == 6 ? host.getGridNode(AEPartLocation.INTERNAL)
-                : ((IPart) host).getGridNode();
+        final IGridNode node;
+        if (member.side == 6) {
+            // 方块接口就是网格宿主；GT 系接口宿主不是 IGridHost，走它暴露的可操作节点。
+            node = host instanceof IGridHost ? ((IGridHost) host).getGridNode(AEPartLocation.INTERNAL)
+                    : host.getActionableNode();
+        } else {
+            node = ((IPart) host).getGridNode();
+        }
         return node != null && node.isActive() && node.getGrid() != null ? node : null;
     }
 
@@ -363,8 +377,15 @@ public final class PatternUploadService {
         if (oldName.equals(newName)) {
             return;
         }
+        int applied = 0;
         for (final Target target : targets) {
-            applyName(target.host, newName);
+            if (applyName(target.host, newName)) {
+                applied++;
+            }
+        }
+        if (applied == 0) {
+            status(player, "ae2us.rename.unsupported");
+            return;
         }
 
         // 映射同步：只动该玩家自己的映射，且只在旧名已无接口使用时改写（成员视图只改一台时旧名还在，不猜）；
@@ -389,23 +410,34 @@ public final class PatternUploadService {
 
         if (newName.isEmpty()) {
             status(player, pointing > 0 ? "ae2us.rename.cleared_stale" : "ae2us.rename.cleared",
-                    targets.size(), pointing);
+                    applied, pointing);
         } else if (synced > 0) {
-            status(player, "ae2us.rename.synced", targets.size(), synced);
+            status(player, "ae2us.rename.synced", applied, synced);
         } else if (pointing > 0) {
-            status(player, "ae2us.rename.stale", targets.size(), pointing);
+            status(player, "ae2us.rename.stale", applied, pointing);
         } else {
-            status(player, "ae2us.rename.success", targets.size());
+            status(player, "ae2us.rename.success", applied);
         }
     }
 
-    private static void applyName(final IInterfaceHost host, final String name) {
-        if (name.isEmpty() && host instanceof AEBasePart) {
-            clearPartName((AEBasePart) host);
-        } else {
-            ((ICustomNameObject) host).setCustomName(name);
+    /** 改名：AE2 系宿主走 ICustomNameObject；GTLCore 的宿主把名字写到 GT 机器壳上
+     *  （setCustomName，空串=清除）。两者都不支持时返回 false 由调用方如实提示。 */
+    private static boolean applyName(final IInterfaceHost host, final String name) {
+        if (host instanceof ICustomNameObject) {
+            if (name.isEmpty() && host instanceof AEBasePart) {
+                clearPartName((AEBasePart) host);
+            } else {
+                ((ICustomNameObject) host).setCustomName(name);
+            }
+            host.saveChanges();
+            return true;
         }
-        host.saveChanges();
+        if (host.getTileEntity() instanceof MetaTileEntityHolder) {
+            ((MetaTileEntityHolder) host.getTileEntity()).setCustomName(name);
+            host.saveChanges();
+            return true;
+        }
+        return false;
     }
 
     /** 部件接口的名字存在部件物品的 display.Name 上，写空串会变成"有名字但名字为空"，清空必须删键。 */
@@ -431,13 +463,31 @@ public final class PatternUploadService {
     }
 
     private static boolean customNamed(final IInterfaceHost host) {
-        final ICustomNameObject named = (ICustomNameObject) host;
-        return named.hasCustomInventoryName() && !named.getCustomInventoryName().isEmpty();
+        return customNameOf(host) != null;
+    }
+
+    /** 宿主的自定义名（没有则 null）：AE2 系读 ICustomNameObject；GTLCore 的宿主不实现它，
+     *  名字存在 GT 机器壳上（IWorldNameable，空串按没有处理）——裸转型会 ClassCastException。 */
+    private static String customNameOf(final IInterfaceHost host) {
+        if (host instanceof ICustomNameObject) {
+            final ICustomNameObject named = (ICustomNameObject) host;
+            return named.hasCustomInventoryName() && !named.getCustomInventoryName().isEmpty()
+                    ? named.getCustomInventoryName() : null;
+        }
+        final TileEntity tile = host.getTileEntity();
+        if (tile instanceof MetaTileEntityHolder) {
+            final IWorldNameable named = (IWorldNameable) tile;
+            if (named.hasCustomName()) {
+                final String name = named.getName();
+                return name == null || name.trim().isEmpty() ? null : name;
+            }
+        }
+        return null;
     }
 
     private static String targetName(final IInterfaceHost host) {
-        return customNamed(host) ? ((ICustomNameObject) host).getCustomInventoryName()
-                : host.getInterfaceDuality().getTermName();
+        final String custom = customNameOf(host);
+        return custom != null ? custom : host.getInterfaceDuality().getTermName();
     }
 
     @SubscribeEvent
@@ -483,14 +533,17 @@ public final class PatternUploadService {
 
     private static Target findTarget(final IGrid grid, final int dimension, final BlockPos pos, final int side) {
         for (final Class<? extends IGridHost> type : grid.getMachinesClasses()) {
-            if (!IInterfaceHost.class.isAssignableFrom(type)) {
+            if (!IInterfaceHost.class.isAssignableFrom(type) && !IGregTechTileEntity.class.isAssignableFrom(type)) {
                 continue;
             }
             for (final IGridNode node : grid.getMachines(type)) {
-                if (!node.isActive() || node.getGrid() != grid || !supported(node.getMachine())) {
+                if (!node.isActive() || node.getGrid() != grid) {
                     continue;
                 }
-                final IInterfaceHost host = (IInterfaceHost) node.getMachine();
+                final IInterfaceHost host = hostOf(node.getMachine());
+                if (host == null) {
+                    continue;
+                }
                 final TileEntity tile = host.getTileEntity();
                 if (tile == null || tile.getWorld() == null) {
                     continue;
@@ -507,14 +560,17 @@ public final class PatternUploadService {
     private static Map<String, Group> groups(final IGrid grid, final ItemStack stack) {
         final Map<String, Group> groups = new HashMap<>();
         for (final Class<? extends IGridHost> type : grid.getMachinesClasses()) {
-            if (!IInterfaceHost.class.isAssignableFrom(type)) {
+            if (!IInterfaceHost.class.isAssignableFrom(type) && !IGregTechTileEntity.class.isAssignableFrom(type)) {
                 continue;
             }
             for (final IGridNode node : grid.getMachines(type)) {
-                if (!node.isActive() || node.getGrid() != grid || !supported(node.getMachine())) {
+                if (!node.isActive() || node.getGrid() != grid) {
                     continue;
                 }
-                final IInterfaceHost host = (IInterfaceHost) node.getMachine();
+                final IInterfaceHost host = hostOf(node.getMachine());
+                if (host == null) {
+                    continue;
+                }
                 final TileEntity tile = host.getTileEntity();
                 if (tile == null || tile.getWorld() == null) {
                     continue;
@@ -535,7 +591,23 @@ public final class PatternUploadService {
         return groups;
     }
 
-    private static boolean supported(final IGridHost host) {
+    /** 从网格节点机器解析接口宿主：AE2（含附属）的节点机器直接就是宿主；GT 系机器挂的是 GT
+     *  机器壳（MetaTileEntityHolder），要经 holder → MTE → getPatternInterfaceHost() 才拿得到。
+     *  类名闸门保证 GTLCore 不在场时整段桥不会被解析执行（引用是惰性解析的）。 */
+    private static IInterfaceHost hostOf(final IGridHost machine) {
+        if (machine instanceof IInterfaceHost) {
+            return supported((IInterfaceHost) machine) ? (IInterfaceHost) machine : null;
+        }
+        if (machine instanceof IGregTechTileEntity) {
+            final MetaTileEntity mte = ((IGregTechTileEntity) machine).getMetaTileEntity();
+            if (mte != null && GTLITE_PATTERN_HATCH.equals(mte.getClass().getName())) {
+                return ((PartMachineMECraftingPatternInputHatch) mte).getPatternInterfaceHost();
+            }
+        }
+        return null;
+    }
+
+    private static boolean supported(final IInterfaceHost host) {
         if (host instanceof TileInterface || host instanceof PartInterface) {
             return true;
         }

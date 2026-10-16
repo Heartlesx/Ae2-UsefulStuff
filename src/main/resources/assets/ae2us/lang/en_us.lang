@@ -120,6 +120,7 @@ ae2us.rename.cleared=Cleared custom name on %s interface(s)
 ae2us.rename.cleared_stale=Cleared custom name on %s interface(s); %s mapping(s) still point to the old name
 ae2us.rename.unavailable=Interface group changed or is no longer on this network
 ae2us.rename.denied=No permission to rename interfaces
+ae2us.rename.unsupported=These interfaces do not support renaming (GT pattern buses follow the machine name)
 tile.ae2us.parallel_unit_16.name=§a16x§r Co-Processing Unit
 tile.ae2us.parallel_unit_64.name=§b64x§r Co-Processing Unit
 tile.ae2us.parallel_unit_256.name=§9256x§r Co-Processing Unit
