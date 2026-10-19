@@ -174,6 +174,32 @@ public final class PatternCategorySelfCheck {
                 && PatternCategory.routingUid(pattern).equals("gregtech.alloy_smelter"),
                 "mold-less alloy smelter recipes keep their category route "
                         + "(molds are captured by content; alloy smelter must not join the legacy whitelist)");
+        // 事件视界收束的形态力场（GTLCore）与模具同构：非消耗输入、按内容识别，
+        // 分类 uid 为 gtlitecore.blackhole_shaping / _stamping。
+        final Item fields = new Item() {
+            @Override public String getTranslationKey(final ItemStack stack) {
+                return stack.getMetadata() == 78 ? "metaitem.shape.field.bottle"
+                        : stack.getMetadata() == 79 ? "metaitem.shape.field.foil"
+                        : "metaitem.circuit.integrated";
+            }
+        }.setHasSubtypes(true).setRegistryName("gtlitecore", "gtlite_meta_item_1");
+        final String bottle = PatternCategory.moldKey(new ItemStack(fields, 1, 78));
+        final String foil = PatternCategory.moldKey(new ItemStack(fields, 1, 79));
+        check(!bottle.isEmpty() && !foil.isEmpty() && !bottle.equals(foil),
+                "event horizon force fields are recognized and distinct");
+        check(PatternCategory.moldMachine("gtlitecore.blackhole_shaping")
+                && PatternCategory.moldMachine("gtlitecore.blackhole_stamping"),
+                "blackhole former categories route by their force field");
+        PatternCategory.write(patternTag, "gtlitecore.blackhole_shaping",
+                "Blackhole former - shaping", false, foil, "Foil force field");
+        check(PatternCategory.routingUid(pattern).equals("gtlitecore.blackhole_shaping|" + foil),
+                "force field is retained in the routing key");
+        check(PatternCategory.routingTitle(pattern).equals("Blackhole former - shaping / Foil force field"),
+                "blackhole mapping title names its force field");
+        PatternCategory.write(patternTag, "gtlitecore.blackhole_stamping",
+                "Blackhole former - stamping", false);
+        check(PatternCategory.requiresMoldMapping(pattern) && PatternCategory.routingUid(pattern).isEmpty(),
+                "legacy blackhole pattern without force field cannot fall back to category");
         // 编码落签必须走 stillSameRecipe（输入或产物任一侧对上即落签），别再退回只查产物侧。
         check(references(ENCODER_MIXIN, "com/extrarawstyle/ae2us/PatternCategory", "stillSameRecipe"),
                 "encoder signing gate routes through stillSameRecipe");

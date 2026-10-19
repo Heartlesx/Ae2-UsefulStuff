@@ -138,7 +138,8 @@ public final class PatternCategory {
         final String namespace = stack.getItem().getRegistryName().getNamespace();
         final String key = stack.getItem().getTranslationKey(stack);
         return (namespace.equals("gregtech") || namespace.equals("gtlitecore"))
-                && (key.contains(".shape.mold.") || key.contains(".shape.extruder."))
+                && (key.contains(".shape.mold.") || key.contains(".shape.extruder.")
+                        || key.contains(".shape.field."))
                 ? stack.getItem().getRegistryName() + "@" + stack.getMetadata() : "";
     }
 
@@ -146,11 +147,14 @@ public final class PatternCategory {
      * 无模具记录时的路由拦截名单：forming press / extruder / fluid solidifier 的旧样板（编码时
      * 还没有模具记录）不允许回退到通用分类映射，需重新从 HEI 导入编码。模具的抓取不经过这里——
      * 按配方内容识别（见 RecipeTransferCategoryMixin）。注意：合金炉这类"多数配方没有模具"的
-     * 机器不要加进来，否则普通配方也会失去分类路由。
+     * 机器不要加进来，否则普通配方也会失去分类路由。GTLCore 事件视界收束的两类配方同样按
+     * 形态力场分流（挤压分类里复制来的压模器配方带 GT 模具，照常走模具键）。
      */
     public static boolean moldMachine(final String uid) {
         return uid.equals("gregtech.forming_press") || uid.equals("gregtech.extruder")
-                || uid.equals("gregtech.fluid_solidifier");
+                || uid.equals("gregtech.fluid_solidifier")
+                || uid.equals("gtlitecore.blackhole_shaping")
+                || uid.equals("gtlitecore.blackhole_stamping");
     }
 
     public static boolean requiresMoldMapping(final ItemStack stack) {

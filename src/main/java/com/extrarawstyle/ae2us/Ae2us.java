@@ -16,7 +16,7 @@ public class Ae2us {
 
     public static final String MODID = "ae2us";
     public static final String NAME = "AE2 Useful Stuff";
-    public static final String VERSION = "1.3.10-dev2";
+    public static final String VERSION = "1.4.0";
 
     @Mod.Instance(MODID)
     public static Ae2us INSTANCE;
