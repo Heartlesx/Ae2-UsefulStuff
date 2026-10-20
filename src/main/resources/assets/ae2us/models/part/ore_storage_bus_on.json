@@ -1,1 +1,7 @@
-{"parent": "ae2us:part/ore_storage_bus_base", "textures": {"face": "minecraft:blocks/quartz_block_side"}}
+{
+  "parent": "ae2us:part/ore_storage_bus_base",
+  "textures": {
+    "front": "ae2us:part/ore_storage_bus_front_on",
+    "status": "ae2us:part/ore_bus_status_on"
+  }
+}

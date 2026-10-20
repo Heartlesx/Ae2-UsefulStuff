@@ -1,1 +1,7 @@
-{"parent": "ae2us:part/ore_storage_bus_base", "textures": {"face": "minecraft:blocks/diamond_block"}}
+{
+  "parent": "ae2us:part/ore_storage_bus_base",
+  "textures": {
+    "front": "ae2us:part/ore_storage_bus_front_channel",
+    "status": "ae2us:part/ore_bus_status_channel"
+  }
+}
