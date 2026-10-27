@@ -1,0 +1,7 @@
+{
+  "parent": "ae2us:part/mirror_provider_base",
+  "textures": {
+    "front": "ae2us:part/mirror_provider_front_off",
+    "status": "ae2us:part/mirror_provider_status_off"
+  }
+}

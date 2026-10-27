@@ -8,6 +8,8 @@
     "ContainerInterfaceMixin",
     "ContainerMEMonitorableMixin",
     "DualityInterfaceInvoker",
+    "DualityInterfacePatternMixin",
+    "MirrorDualityInvoker",
     "SmartBlockingDataMixin",
     "DualityInterfaceMixin",
     "NetworkMonitorCraftablesMixin",

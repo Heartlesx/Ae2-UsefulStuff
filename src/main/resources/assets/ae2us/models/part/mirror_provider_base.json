@@ -1,0 +1,57 @@
+{
+  "textures": {
+    "sides": "ae2us:part/mirror_provider_sides",
+    "back": "ae2us:part/mirror_provider_back",
+    "front": "ae2us:part/mirror_provider_front_off",
+    "status": "ae2us:part/mirror_provider_status_off",
+    "particle": "ae2us:part/mirror_provider_back"
+  },
+  "elements": [
+    {
+      "from": [3, 3, 0],
+      "to": [13, 13, 1],
+      "faces": {
+        "down": {"texture": "#sides"},
+        "up": {"texture": "#sides"},
+        "north": {"texture": "#front"},
+        "south": {"texture": "#back"},
+        "east": {"texture": "#sides"},
+        "west": {"texture": "#sides"}
+      }
+    },
+    {
+      "from": [2, 2, 1],
+      "to": [14, 14, 2],
+      "faces": {
+        "down": {"texture": "#sides"},
+        "up": {"texture": "#sides"},
+        "north": {"texture": "#front"},
+        "south": {"texture": "#back"},
+        "east": {"texture": "#sides"},
+        "west": {"texture": "#sides"}
+      }
+    },
+    {
+      "from": [5, 5, 3],
+      "to": [11, 11, 4],
+      "faces": {
+        "down": {"texture": "#sides"},
+        "up": {"texture": "#sides"},
+        "north": {"texture": "#front"},
+        "south": {"texture": "#back"},
+        "east": {"texture": "#sides"},
+        "west": {"texture": "#sides"}
+      }
+    },
+    {
+      "from": [5, 5, 2],
+      "to": [11, 11, 3],
+      "faces": {
+        "down": {"texture": "#status"},
+        "up": {"texture": "#status"},
+        "east": {"texture": "#status"},
+        "west": {"texture": "#status"}
+      }
+    }
+  ]
+}

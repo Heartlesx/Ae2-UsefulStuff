@@ -15,6 +15,12 @@ public final class OreBusGuiHandler implements IGuiHandler {
                     ? new com.extrarawstyle.ae2us.alarm.ContainerStorageAlarm(player.inventory,
                             (com.extrarawstyle.ae2us.alarm.TileStorageAlarm) tile) : null;
         }
+        if (id == com.extrarawstyle.ae2us.maintainer.StockMaintainerRegistration.GUI_ID) {
+            final net.minecraft.tileentity.TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            return tile instanceof com.extrarawstyle.ae2us.maintainer.TileStockMaintainer
+                    ? new com.extrarawstyle.ae2us.maintainer.ContainerStockMaintainer(player.inventory,
+                            (com.extrarawstyle.ae2us.maintainer.TileStockMaintainer) tile) : null;
+        }
         final appeng.parts.automation.PartUpgradeable bus = OreBusRegistration.findPart(world, id, new BlockPos(x, y, z));
         if (bus instanceof PartOreStorageBus) { return new ContainerOreExportBus(player.inventory, (PartOreStorageBus) bus); }
         return bus == null ? null : new ContainerOreExportBus(player.inventory, (PartOreExportBus) bus);
@@ -26,6 +32,12 @@ public final class OreBusGuiHandler implements IGuiHandler {
             final net.minecraft.tileentity.TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
             return tile instanceof com.extrarawstyle.ae2us.alarm.TileStorageAlarm
                     ? Ae2us.PROXY.storageAlarmGui(player.inventory, (com.extrarawstyle.ae2us.alarm.TileStorageAlarm) tile) : null;
+        }
+        if (id == com.extrarawstyle.ae2us.maintainer.StockMaintainerRegistration.GUI_ID) {
+            final net.minecraft.tileentity.TileEntity tile = world.getTileEntity(new BlockPos(x, y, z));
+            return tile instanceof com.extrarawstyle.ae2us.maintainer.TileStockMaintainer
+                    ? Ae2us.PROXY.stockMaintainerGui(player.inventory,
+                            (com.extrarawstyle.ae2us.maintainer.TileStockMaintainer) tile) : null;
         }
         final appeng.parts.automation.PartUpgradeable bus = OreBusRegistration.findPart(world, id, new BlockPos(x, y, z));
         return bus == null ? null : Ae2us.PROXY.oreBusGui(player.inventory, bus);

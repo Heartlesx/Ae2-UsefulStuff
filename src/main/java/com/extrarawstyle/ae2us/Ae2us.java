@@ -16,7 +16,7 @@ public class Ae2us {
 
     public static final String MODID = "ae2us";
     public static final String NAME = "AE2 Useful Stuff";
-    public static final String VERSION = "1.4.0-dev1";
+    public static final String VERSION = "1.5.0-dev2";
 
     @Mod.Instance(MODID)
     public static Ae2us INSTANCE;
@@ -29,10 +29,12 @@ public class Ae2us {
     public void preInit(final FMLPreInitializationEvent event) {
         NetworkHandler.register();
         OreBusRegistration.preInit();
+        com.extrarawstyle.ae2us.mirror.MirrorRegistration.preInit();
         com.extrarawstyle.ae2us.alarm.AlarmRegistration.preInit();
         com.extrarawstyle.ae2us.parallel.ParallelUnitRegistration.preInit();
         com.extrarawstyle.ae2us.storage.StorageCellRegistration.preInit();
         com.extrarawstyle.ae2us.craftstorage.CraftingStorageRegistration.preInit();
+        com.extrarawstyle.ae2us.maintainer.StockMaintainerRegistration.preInit();
         NetworkRegistry.INSTANCE.registerGuiHandler(this, new OreBusGuiHandler());
         FMLCommonHandler.instance().bus().register(PatternUploadService.class);
         event.getModLog().info("{} {} 已加载", NAME, VERSION);

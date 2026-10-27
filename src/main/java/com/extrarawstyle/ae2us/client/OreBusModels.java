@@ -21,5 +21,20 @@ public final class OreBusModels {
                 new ModelResourceLocation(OreBusRegistration.BUS.getRegistryName(), "inventory"));
         ModelLoader.setCustomModelResourceLocation(com.extrarawstyle.ae2us.alarm.AlarmRegistration.ITEM, 0,
                 new ModelResourceLocation(com.extrarawstyle.ae2us.alarm.AlarmRegistration.ITEM.getRegistryName(), "inventory"));
+        ModelLoader.setCustomModelResourceLocation(
+                com.extrarawstyle.ae2us.maintainer.StockMaintainerRegistration.ITEM, 0,
+                new ModelResourceLocation(
+                        com.extrarawstyle.ae2us.maintainer.StockMaintainerRegistration.ITEM.getRegistryName(),
+                        "inventory"));
+        ModelLoader.setCustomModelResourceLocation(
+                com.extrarawstyle.ae2us.mirror.MirrorRegistration.PROVIDER, 0,
+                new ModelResourceLocation(
+                        com.extrarawstyle.ae2us.mirror.MirrorRegistration.PROVIDER.getRegistryName(),
+                        "inventory"));
+        ModelLoader.setCustomModelResourceLocation(
+                com.extrarawstyle.ae2us.mirror.MirrorRegistration.BINDER, 0,
+                new ModelResourceLocation(
+                        com.extrarawstyle.ae2us.mirror.MirrorRegistration.BINDER.getRegistryName(),
+                        "inventory"));
     }
 }

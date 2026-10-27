@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "lit=false,working=false": { "model": "ae2us:stock_maintainer_off" },
+    "lit=false,working=true": { "model": "ae2us:stock_maintainer_off" },
+    "lit=true,working=false": { "model": "ae2us:stock_maintainer_on" },
+    "lit=true,working=true": { "model": "ae2us:stock_maintainer_working" }
+  }
+}

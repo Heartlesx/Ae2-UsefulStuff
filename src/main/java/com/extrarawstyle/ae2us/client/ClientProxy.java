@@ -54,6 +54,26 @@ public class ClientProxy extends CommonProxy {
     }
 
     @Override
+    public Object stockMaintainerGui(final net.minecraft.entity.player.InventoryPlayer inventory,
+                                     final com.extrarawstyle.ae2us.maintainer.TileStockMaintainer tile) {
+        return new GuiStockMaintainer(new com.extrarawstyle.ae2us.maintainer.ContainerStockMaintainer(inventory, tile));
+    }
+
+    @Override
+    public void stockMaintainerState(final com.extrarawstyle.ae2us.maintainer.StockMaintainerNetwork.State state) {
+        Minecraft.getMinecraft().addScheduledTask(() -> {
+            final net.minecraft.entity.player.EntityPlayer player = Minecraft.getMinecraft().player;
+            if (player != null && player.openContainer instanceof com.extrarawstyle.ae2us.maintainer.ContainerStockMaintainer
+                    && player.openContainer.windowId == state.window) {
+                final com.extrarawstyle.ae2us.maintainer.ContainerStockMaintainer container =
+                        (com.extrarawstyle.ae2us.maintainer.ContainerStockMaintainer) player.openContainer;
+                container.state = state;
+                container.page = state.page;
+            }
+        });
+    }
+
+    @Override
     public void oreBusState(final com.extrarawstyle.ae2us.orebus.OreBusNetwork.State state) {
         Minecraft.getMinecraft().addScheduledTask(() -> {
             final net.minecraft.entity.player.EntityPlayer player = Minecraft.getMinecraft().player;

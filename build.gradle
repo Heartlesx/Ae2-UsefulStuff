@@ -63,6 +63,10 @@ dependencies {
     // 运行期对它的引用都被类名闸门挡着（机器不在场时那段代码不会执行），不产生依赖。
     compileOnly files('libs/gtlitecore-1.0.0.jar')
     testImplementation files('libs/gtlitecore-1.0.0.jar')
+    // AE2FC 只在编译期使用（库存维持器的流体模式）；未安装时物品功能照常工作。
+    // 运行期引用集中在 Ae2fcFluidAdapter，由 FluidMaintainerBridge 的模组在场判定隔离。
+    compileOnly files('libs/Fluid Craft for AE2-2.6.6-r.jar')
+    testImplementation files('libs/Fluid Craft for AE2-2.6.6-r.jar')
     testImplementation fg.deobf('local:ae2-uel:v0.56.7')
 }
 
@@ -251,3 +255,17 @@ task verifyGtlcPatternBus(type: JavaExec) {
 }
 
 check.dependsOn verifyGtlcPatternBus
+
+task verifyStockMaintainer(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.StockMaintainerSelfCheck'
+}
+
+check.dependsOn verifyStockMaintainer
+
+task verifyMirrorProvider(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.mirror.MirrorSelfCheck'
+}
+
+check.dependsOn verifyMirrorProvider

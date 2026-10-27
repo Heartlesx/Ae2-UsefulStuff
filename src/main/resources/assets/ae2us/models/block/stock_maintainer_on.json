@@ -1,0 +1,10 @@
+{
+  "parent": "ae2us:block/stock_maintainer_base",
+  "textures": {
+    "particle": "ae2us:blocks/stock_maintainer_side_on",
+    "bottom": "ae2us:blocks/stock_maintainer_bottom",
+    "top": "ae2us:blocks/stock_maintainer_top_on",
+    "side": "ae2us:blocks/stock_maintainer_side_on",
+    "front": "ae2us:blocks/stock_maintainer_front_on"
+  }
+}

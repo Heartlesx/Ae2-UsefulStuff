@@ -32,6 +32,7 @@ public final class NetworkHandler {
         com.extrarawstyle.ae2us.orebus.OreBusNetwork.register(channel);
         com.extrarawstyle.ae2us.alarm.AlarmNetwork.register(channel);
         com.extrarawstyle.ae2us.craftpin.CraftedItemPinNetwork.register(channel);
+        com.extrarawstyle.ae2us.maintainer.StockMaintainerNetwork.register(channel);
     }
 
     public static void sendToggle() {

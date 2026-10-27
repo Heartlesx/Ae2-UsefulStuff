@@ -23,6 +23,14 @@ public class CommonProxy {
     public void alarmState(final com.extrarawstyle.ae2us.alarm.AlarmNetwork.State state) {
     }
 
+    public Object stockMaintainerGui(final net.minecraft.entity.player.InventoryPlayer inventory,
+                                     final com.extrarawstyle.ae2us.maintainer.TileStockMaintainer tile) {
+        return null;
+    }
+
+    public void stockMaintainerState(final com.extrarawstyle.ae2us.maintainer.StockMaintainerNetwork.State state) {
+    }
+
     public void pinnedItems(final int window, final List<net.minecraft.item.ItemStack> items) {
     }
 
