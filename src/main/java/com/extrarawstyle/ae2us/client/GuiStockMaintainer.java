@@ -52,6 +52,8 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
     private static final int BATCH_X = 218;
     private static final int STATE_X = 268;
     private static final int TOGGLE_X = 330;
+    /** 该行有未提交的数值改动时，状态格临时变成「确定」按钮。 */
+    private static final int CONFIRM_W = 58;
 
     private final ContainerStockMaintainer container;
     private final GuiTextField[] thresholds = new GuiTextField[ROWS];
@@ -145,6 +147,27 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
             this.commitThreshold(i);
             this.commitBatch(i);
         }
+    }
+
+    /**
+     * 该行两个输入框里是否有还没提交的改动。
+     * 有的话状态格会临时让位给「确定」按钮——玩家输完数字直接点它就行，
+     * 不必记得按回车，也不会因为点了别处而看到数值被悄悄改回去。
+     */
+    private boolean dirty(final int row) {
+        final GuiTextField threshold = this.thresholds[row];
+        final GuiTextField batch = this.batches[row];
+        if (threshold == null || batch == null) { return false; }
+        return !threshold.getText().equals(this.committedThresholds[row])
+                || !batch.getText().equals(this.committedBatches[row]);
+    }
+
+    /** 点「确定」：提交本行两个数值，然后收起焦点。非法值仍按原逻辑回滚并提示。 */
+    private void confirmRow(final int row) {
+        this.commitThreshold(row);
+        this.commitBatch(row);
+        this.thresholds[row].setFocused(false);
+        this.batches[row].setFocused(false);
     }
 
     // ---------------------------------------------------------------- 标记
@@ -246,6 +269,11 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
             if (state != null && state.configured[i] && this.isPointInRegion(TOGGLE_X, rowY + 4, 16, 9, x, y)) {
                 this.commitAll();
                 this.send(StockMaintainerNetwork.SET_ENABLED, index, state.enabled[i] ? "0" : "1", ItemStack.EMPTY);
+                return;
+            }
+            // 状态格被换成「确定」按钮时点它：只提交本行，不牵动别的行。
+            if (this.dirty(i) && this.isPointInRegion(STATE_X, rowY + 4, CONFIRM_W, 9, x, y)) {
+                this.confirmRow(i);
                 return;
             }
         }
@@ -357,6 +385,7 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
             drawRect(x + SLOT_X + 1, rowY + 1, x + SLOT_X + 15, rowY + 15, 0xfff4f7f1);
             this.drawFieldBox(x, rowY, THRESHOLD_X, warning);
             this.drawFieldBox(x, rowY, BATCH_X, warning);
+            this.drawConfirm(x, rowY, this.dirty(i));
             this.drawToggle(x, rowY, state, i);
         }
         for (final Slot slot : this.inventorySlots.inventorySlots) {
@@ -381,6 +410,12 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
         drawRect(x + fieldX - 1, rowY + 1, x + fieldX + FIELD_W, rowY + 15,
                 warning ? 0xffc7a8a3 : 0xffa7bdb4);
         drawRect(x + fieldX, rowY + 2, x + fieldX + FIELD_W - 1, rowY + 14, 0xfffbfffb);
+    }
+
+    private void drawConfirm(final int x, final int rowY, final boolean dirty) {
+        if (!dirty) { return; }
+        drawRect(x + STATE_X, rowY + 1, x + STATE_X + CONFIRM_W, rowY + 16, 0xff2f7a68);
+        drawRect(x + STATE_X + 1, rowY + 2, x + STATE_X + CONFIRM_W - 1, rowY + 15, 0xff3f9c85);
     }
 
     private void drawModeChip(final int x, final int rowY, final int mode) {
@@ -423,6 +458,7 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
         if (state != null) {
             for (int i = 0; i < ROWS; i++) { this.drawRowText(state, i); }
         }
+        for (int i = 0; i < ROWS; i++) { this.drawConfirmText(i); }
         this.fontRenderer.drawString(tr("mark"), 54, 30, 0x355050);
         this.fontRenderer.drawString(tr("current"), 120, 30, 0x355050);
         this.fontRenderer.drawString(tr("threshold"), 168, 30, 0x355050);
@@ -448,8 +484,18 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
                 : "-";
         this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(count, 44), COUNT_X, rowY,
                 state.countsValid[i] ? 0x2d6260 : 0x7c918c);
+        // 状态格让位给「确定」按钮时，状态文字不画（按钮点击后状态自然回来）。
+        if (this.dirty(i)) { return; }
         this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(this.stateLabel(state.statuses[i]), 60),
                 STATE_X, rowY, this.warning(state.statuses[i]) ? 0xad3e3b : 0x2d6260);
+    }
+
+    /** 「确定」按钮上的文字。drawFG 里画，drawBG 阶段不画文字。 */
+    private void drawConfirmText(final int i) {
+        if (!this.dirty(i)) { return; }
+        final String label = tr("confirm");
+        final int textX = STATE_X + (CONFIRM_W + 34 - this.fontRenderer.getStringWidth(label)) / 2;
+        this.fontRenderer.drawString(label, textX, TOP + i * ROW_H + 4, 0xf1f5ef);
     }
 
     private String stateLabel(final int status) {
@@ -492,7 +538,11 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
                         mouseX, mouseY);
             }
             if (this.isPointInRegion(STATE_X - 1, rowY, 62, 16, mouseX, mouseY)) {
-                this.drawHoveringText(this.stateHint(state.statuses[i]), mouseX, mouseY);
+                if (this.dirty(i)) {
+                    this.drawHoveringText(tr("confirm_hint"), mouseX, mouseY);
+                } else {
+                    this.drawHoveringText(this.stateHint(state.statuses[i]), mouseX, mouseY);
+                }
             }
             if (this.isPointInRegion(TOGGLE_X, rowY + 4, 16, 9, mouseX, mouseY)) {
                 this.drawHoveringText(tr(state.enabled[i] ? "toggle_off" : "toggle_on"), mouseX, mouseY);

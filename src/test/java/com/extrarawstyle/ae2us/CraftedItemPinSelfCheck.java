@@ -38,6 +38,7 @@ public final class CraftedItemPinSelfCheck {
     private static final String CONTAINER_MIXIN = "ContainerMEMonitorablePinMixin";
     private static final String REPO_MIXIN = "client.ItemRepoPinMixin";
     private static final String GUI_MIXIN = "client.AEBaseGuiPinMixin";
+    private static final String REQUESTER_ACCESSOR = "CraftingCPUClusterRequesterAccessor";
 
     public static void main(final String[] args) throws Exception {
         Bootstrap.register();
@@ -49,9 +50,81 @@ public final class CraftedItemPinSelfCheck {
         checkReapplyTrigger();
         checkPerPlayerIsolation();
         checkRegistered();
+        checkMachineOrdersExcluded();
 
         System.out.println("Crafted item pin checks passed (key equality, ttl expiry, eviction order, clear keeps busy, "
-                + "pin order under search filter, reapply trigger, per-player isolation, mixin registration)");
+                + "pin order under search filter, reapply trigger, per-player isolation, machine orders excluded, "
+                + "mixin registration)");
+    }
+
+    /**
+     * 机器（库存维持器）下的单不该置顶：判据是 CPU 里记录的发起者。
+     * 玩家下单走 PlayerSource → 记 UUID；机器走 MachineSource → 恒为 null。
+     * <p>
+     * 断言收窄到 {@code ae2us$busyOutputs} 方法本身：只看整个类里有没有 IFNULL / 有没有引用 accessor
+     * 是不够的（别处也有 null 判断），必须证明「收产出」这一步真的读了发起者。
+     */
+    private static void checkMachineOrdersExcluded() throws Exception {
+        final String resource = "/com/extrarawstyle/ae2us/mixin/ContainerMEMonitorablePinMixin.class";
+        try (java.io.InputStream stream = CraftedItemPinSelfCheck.class.getResourceAsStream(resource)) {
+            check(stream != null, "pin poll mixin is on the test classpath");
+            final boolean[] readsRequester = new boolean[1];
+            org.objectweb.asm.ClassReader reader = new org.objectweb.asm.ClassReader(stream);
+            reader.accept(new org.objectweb.asm.ClassVisitor(org.objectweb.asm.Opcodes.ASM5) {
+                @Override
+                public org.objectweb.asm.MethodVisitor visitMethod(final int access, final String name,
+                        final String descriptor, final String signature, final String[] exceptions) {
+                    if (!"ae2us$busyOutputs".equals(name)) {
+                        return null;
+                    }
+                    return new org.objectweb.asm.MethodVisitor(org.objectweb.asm.Opcodes.ASM5) {
+                        @Override
+                        public void visitMethodInsn(final int opcode, final String owner, final String name2,
+                                final String desc, final boolean itf) {
+                            // 收产出时必须调用「这一单是不是玩家下的」这个判定。
+                            if (name2 != null && name2.equals("ae2us$placedByPlayer")) {
+                                readsRequester[0] = true;
+                            }
+                        }
+                    };
+                }
+            }, org.objectweb.asm.ClassReader.SKIP_DEBUG);
+            check(readsRequester[0], "busy-output collection filters by who placed the order");
+        }
+        // 判定本身必须读 CPU 的下单者字段（accessor），而不是靠 isStandalone——
+        // 玩家与机器下单的 requestingMachine 都是 null，isStandalone 分不出来。
+        final String helper = "/com/extrarawstyle/ae2us/mixin/ContainerMEMonitorablePinMixin.class";
+        final boolean[] usesAccessor = new boolean[1];
+        final boolean[] usesStandalone = new boolean[1];
+        try (java.io.InputStream stream = CraftedItemPinSelfCheck.class.getResourceAsStream(helper)) {
+            new org.objectweb.asm.ClassReader(stream).accept(new org.objectweb.asm.ClassVisitor(org.objectweb.asm.Opcodes.ASM5) {
+                @Override
+                public org.objectweb.asm.MethodVisitor visitMethod(final int access, final String name,
+                        final String descriptor, final String signature, final String[] exceptions) {
+                    if (!"ae2us$placedByPlayer".equals(name)) {
+                        return null;
+                    }
+                    return new org.objectweb.asm.MethodVisitor(org.objectweb.asm.Opcodes.ASM5) {
+                        @Override
+                        public void visitTypeInsn(final int opcode, final String type) {
+                            if (type != null && type.endsWith("CraftingCPUClusterRequesterAccessor")) {
+                                usesAccessor[0] = true;
+                            }
+                        }
+
+                        @Override
+                        public void visitMethodInsn(final int opcode, final String owner, final String name2,
+                                final String desc, final boolean itf) {
+                            if ("isStandalone".equals(name2)) {
+                                usesStandalone[0] = true;
+                            }
+                        }
+                    };
+                }
+            }, org.objectweb.asm.ClassReader.SKIP_DEBUG);
+        }
+        check(usesAccessor[0], "the player-order check reads the requester through the accessor");
+        check(!usesStandalone[0], "the player-order check must not rely on isStandalone");
     }
 
     /** 超出上限时顶替的必须是"最早置顶"的那个，而不是随便一个。 */
@@ -207,6 +280,7 @@ public final class CraftedItemPinSelfCheck {
             check(listed(json, "mixins", CONTAINER_MIXIN), CONTAINER_MIXIN + " 已注册进 mixins.ae2us.json");
             check(listed(json, "client", REPO_MIXIN), REPO_MIXIN + " 已注册进 mixins.ae2us.json");
             check(listed(json, "client", GUI_MIXIN), GUI_MIXIN + " 已注册进 mixins.ae2us.json");
+            check(listed(json, "mixins", REQUESTER_ACCESSOR), REQUESTER_ACCESSOR + " 已注册进 mixins.ae2us.json");
         }
     }
 

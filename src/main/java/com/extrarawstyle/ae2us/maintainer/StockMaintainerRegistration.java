@@ -11,6 +11,7 @@ import net.minecraft.item.crafting.IRecipe;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.event.RegistryEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.common.event.FMLInterModComms;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.registry.GameRegistry;
 import net.minecraftforge.oredict.ShapelessOreRecipe;
@@ -29,6 +30,8 @@ public final class StockMaintainerRegistration {
 
     public static void preInit() {
         GameRegistry.registerTileEntity(TileStockMaintainer.class, new ResourceLocation(Ae2us.MODID, "stock_maintainer"));
+        FMLInterModComms.sendFunctionMessage("theoneprobe", "getTheOneProbe",
+                "com.extrarawstyle.ae2us.maintainer.TopMaintainerIntegration");
         // 放 AE2 自己的创造页，和接口、发信器挨着；AE2 尚未初始化时退回本模组惯用的红石页。
         final CreativeTabs tab = CreativeTab.instance != null ? CreativeTab.instance : CreativeTabs.REDSTONE;
         ITEM.setCreativeTab(tab);

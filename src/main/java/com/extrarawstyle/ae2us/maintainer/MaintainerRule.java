@@ -17,6 +17,12 @@ public final class MaintainerRule {
 
     /** 当前关联订单的 craftID；null 表示没有关联。 */
     public String craftId;
+    /**
+     * 本订单期间是否曾经在网络的 CPU 列表里见到它。
+     * 有些 CPU（例如 ECO 的虚拟合成处理器）完成后会把自己从网络里摘掉，
+     * 且没有方块坐标可查——那时只能靠「见过」判断这一单确实跑过。
+     */
+    public boolean seenRunning;
     /** 订单所在 CPU 核心方块坐标，仅作恢复线索。 */
     public boolean hasCpuPos;
     public int cpuDim;
@@ -44,6 +50,7 @@ public final class MaintainerRule {
 
     public void clearOrder() {
         this.craftId = null;
+        this.seenRunning = false;
         this.hasCpuPos = false;
         this.cpuDim = 0;
         this.cpuPos = 0L;

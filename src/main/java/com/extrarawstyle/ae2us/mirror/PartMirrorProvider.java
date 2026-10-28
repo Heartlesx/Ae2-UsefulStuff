@@ -318,6 +318,33 @@ public final class PartMirrorProvider extends PartBasicState
         return a.getCount() == b.getCount() && ItemStack.areItemStacksEqual(a, b);
     }
 
+    // ---------------------------------------------------------------- TOP 读取
+
+    /** 绑定了几个源接口（含当前解析不到、只是坐标还留着的）。 */
+    public int bindingCount() {
+        return this.bindings.size();
+    }
+
+    /** 第一个绑定的源接口坐标；没有绑定时返回 null。只给 TOP 显示用。 */
+    public BlockPos firstBindingPos() {
+        return this.bindings.isEmpty() ? null : this.bindings.get(0).pos;
+    }
+
+    /** 已经镜像过来的样板张数（不算空槽）。 */
+    public int mirroredPatternCount() {
+        final IItemHandler patterns = this.duality.getPatterns();
+        int used = 0;
+        for (int slot = 0; slot < patterns.getSlots(); slot++) {
+            if (!patterns.getStackInSlot(slot).isEmpty()) { used++; }
+        }
+        return used;
+    }
+
+    /** 上一次同步时是否因为超过槽位而截断。 */
+    public boolean truncated() {
+        return this.truncated;
+    }
+
     // ---------------------------------------------------------------- 提示
 
     void describeTo(final EntityPlayer player) {

@@ -17,6 +17,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraftforge.event.RegistryEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.common.event.FMLInterModComms;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.oredict.ShapelessOreRecipe;
 
@@ -32,6 +33,8 @@ public final class MirrorRegistration {
     public static void preInit() {
         AEApi.instance().registries().partModels().registerModels(
                 PartMirrorProvider.MODEL_OFF, PartMirrorProvider.MODEL_ON, PartMirrorProvider.MODEL_CHANNEL);
+        FMLInterModComms.sendFunctionMessage("theoneprobe", "getTheOneProbe",
+                "com.extrarawstyle.ae2us.mirror.TopMirrorIntegration");
     }
 
     @SubscribeEvent

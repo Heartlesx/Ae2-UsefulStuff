@@ -269,3 +269,17 @@ task verifyMirrorProvider(type: JavaExec) {
 }
 
 check.dependsOn verifyMirrorProvider
+
+task verifyCraftingStatusOrder(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.CraftingStatusOrderSelfCheck'
+}
+
+check.dependsOn verifyCraftingStatusOrder
+
+task verifyTopProbe(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.TopProbeSelfCheck'
+}
+
+check.dependsOn verifyTopProbe

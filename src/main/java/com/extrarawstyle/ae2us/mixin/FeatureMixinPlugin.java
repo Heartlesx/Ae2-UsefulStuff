@@ -46,6 +46,7 @@ public final class FeatureMixinPlugin implements IMixinConfigPlugin {
             case "NetworkMonitorCraftablesMixin":
                 return FeatureConfig.terminalCraftableMarksEnabled() || FeatureConfig.recipeCraftableMarksEnabled();
             case "ContainerMEMonitorablePinMixin":
+            case "CraftingCPUClusterRequesterAccessor":
             case "client.ItemRepoPinMixin":
             case "client.AEBaseGuiPinMixin":
                 return FeatureConfig.craftedItemPinEnabled();

@@ -42,6 +42,7 @@ public final class StockMaintainerSelfCheck {
         targetChangeChecks();
         queueFairnessChecks();
         planExpiryChecks();
+        orderLookupChecks();
         nbtChecks();
         statusChecks();
         packetChecks();
@@ -310,8 +311,74 @@ public final class StockMaintainerSelfCheck {
         check(queue.pick(book, 0) == 2, "the cursor keeps advancing past a row that holds a plan");
     }
 
-    // ---------------------------------------------------------------- NBT
+    // ---------------------------------------------------------------- 订单核对
 
+    /**
+     * 订单被取消后必须能自己恢复。AE2 的 cancel() 会把 myLastLink 直接置 null，
+     * 若还按“没有 link = 未知”处理，这条规则会带着非空 craftId 永远排不进队列。
+     */
+    private static void orderLookupChecks() {
+        final com.extrarawstyle.ae2us.maintainer.OrderLookup running =
+                com.extrarawstyle.ae2us.maintainer.OrderLookup.forRememberedCpu(true, true, true, true);
+        check(running.state == com.extrarawstyle.ae2us.maintainer.OrderLookup.RUNNING,
+                "matching craft id on a busy CPU is still running");
+
+        // 同 craftID 但 CPU 已不忙：这一单结束了。
+        check(com.extrarawstyle.ae2us.maintainer.OrderLookup.forRememberedCpu(true, true, true, false).state
+                        == com.extrarawstyle.ae2us.maintainer.OrderLookup.FINISHED,
+                "matching craft id on an idle CPU is finished");
+
+        // 关键修复：订单被取消 → cancel() 清空 myLastLink → 没有 link 且不忙 = 结束。
+        check(com.extrarawstyle.ae2us.maintainer.OrderLookup.forRememberedCpu(true, false, false, false).state
+                        == com.extrarawstyle.ae2us.maintainer.OrderLookup.FINISHED,
+                "cancelled order (no link, idle CPU) is finished, not unknown");
+
+        // 看不到 link 但 CPU 仍在忙：证据不足，保持未知，绝不重下。
+        check(com.extrarawstyle.ae2us.maintainer.OrderLookup.forRememberedCpu(true, false, false, true).state
+                        == com.extrarawstyle.ae2us.maintainer.OrderLookup.UNKNOWN,
+                "no link but CPU is busy stays unknown");
+
+        // CPU 换成别的单：原单不再占用它。
+        check(com.extrarawstyle.ae2us.maintainer.OrderLookup.forRememberedCpu(true, false, true, true).state
+                        == com.extrarawstyle.ae2us.maintainer.OrderLookup.FINISHED,
+                "a different craft id on that CPU finishes the old order");
+
+        // CPU 被拆掉：不可能还在跑。
+        check(com.extrarawstyle.ae2us.maintainer.OrderLookup.forRememberedCpu(false, false, false, false).state
+                        == com.extrarawstyle.ae2us.maintainer.OrderLookup.FINISHED,
+                "a removed CPU finishes the order");
+
+        // 结束判定必须真的清掉关联，否则队列仍然不放行。
+        final MaintainerRule rule = new MaintainerRule();
+        rule.target = AEItemStack.fromItemStack(new ItemStack(Items.IRON_INGOT));
+        rule.threshold = 1000;
+        rule.batch = 64;
+        rule.enabled = true;
+        rule.craftId = "cancel-me";
+        final MaintainerQueue queue = new MaintainerQueue();
+        check(!queue.eligible(rule, 0, 0L), "a row holding an order is not eligible");
+        rule.clearOrder();
+        check(queue.eligible(rule, 0, 0L), "clearing the finished order puts the row back in rotation");
+
+        // ECO（虚拟合成处理器）场景：vCPU 没有方块坐标，完成后自己从网络消失。
+        // 只见过它跑过一单，就足以判定"跑完了"；从没见过才是真的未知。
+        check(com.extrarawstyle.ae2us.maintainer.OrderLookup.forMissingCpu(true).state
+                        == com.extrarawstyle.ae2us.maintainer.OrderLookup.FINISHED,
+                "a CPU that vanished after being seen running is finished");
+        check(com.extrarawstyle.ae2us.maintainer.OrderLookup.forMissingCpu(false).state
+                        == com.extrarawstyle.ae2us.maintainer.OrderLookup.UNKNOWN,
+                "a CPU never seen is still unknown (order may not have appeared yet)");
+
+        // 旧存档里的订单没有这个标记，行为必须保持不变（仍是未知，绝不重下）。
+        final MaintainerRule legacy = new MaintainerRule();
+        legacy.target = AEItemStack.fromItemStack(new ItemStack(Items.IRON_INGOT));
+        legacy.craftId = "legacy-order";
+        check(!legacy.seenRunning, "an order loaded without the marker is not treated as seen");
+        legacy.clearOrder();
+        check(!legacy.seenRunning, "clearing an order also clears the marker");
+    }
+
+    // ---------------------------------------------------------------- NBT
     private static void nbtChecks() {
         final MaintainerBook book = new MaintainerBook();
         book.setTarget(0, AEItemStack.fromItemStack(new ItemStack(Items.IRON_INGOT)), MaintainerRule.MODE_ITEM);
@@ -344,6 +411,7 @@ public final class StockMaintainerSelfCheck {
         check("order-abc".equals(first.craftId), "order id survives NBT roundtrip");
         check(first.orderBatch == Long.MAX_VALUE, "order batch survives NBT roundtrip");
         check(first.hasCpuPos && first.cpuDim == -7 && first.cpuPos == 987654321L, "CPU position survives NBT roundtrip");
+        check(!first.seenRunning, "absent marker stays false after a roundtrip");
         check(!first.observedValid && first.observed == 0, "runtime observation is not restored from NBT");
 
         final MaintainerRule last = restored.rule(31);
@@ -365,6 +433,17 @@ public final class StockMaintainerSelfCheck {
         // 空白产物不带任何旧配置。
         final ItemStack fresh = new ItemStack(com.extrarawstyle.ae2us.maintainer.StockMaintainerRegistration.BLOCK);
         check(!fresh.hasTagCompound(), "a freshly crafted block carries no configuration");
+
+        // "见过这单在跑"的标记也要能存盘：否则拆下再放回后又会把 ECO 的订单判成未知。
+        final MaintainerBook seenBook = new MaintainerBook();
+        seenBook.setTarget(0, AEItemStack.fromItemStack(new ItemStack(Items.IRON_INGOT)), MaintainerRule.MODE_ITEM);
+        seenBook.setThreshold(0, 500);
+        seenBook.setBatch(0, 100);
+        seenBook.rule(0).craftId = "eco-order";
+        seenBook.rule(0).seenRunning = true;
+        final MaintainerRule seenBack = roundTrip(seenBook).rule(0);
+        check("eco-order".equals(seenBack.craftId), "the ECO order id survives NBT roundtrip");
+        check(seenBack.seenRunning, "the seen-running marker survives NBT roundtrip");
 
         // 流体目标：注册名 + NBT 是身份，数量不参与；两种水（有无 NBT）必须分开。
         // 这里用字面规则代替 setTarget，因为 setTarget 的查重走 AE 的 equals，
@@ -688,5 +767,12 @@ public final class StockMaintainerSelfCheck {
 
     private static void check(final boolean condition, final String message) {
         if (!condition) { throw new AssertionError(message); }
+    }
+
+    /** 存盘再读回，用来核对某个字段能不能往返。 */
+    private static MaintainerBook roundTrip(final MaintainerBook book) {
+        final MaintainerBook restored = new MaintainerBook();
+        MaintainerNbt.load(restored, MaintainerNbt.save(book));
+        return restored;
     }
 }

@@ -243,20 +243,6 @@ public class TileStockMaintainer extends AENetworkTile implements ITickable {
         }
     }
 
-    /** 订单核对结果。 */
-    private static final class OrderLookup {
-        static final int RUNNING = 0, FINISHED = 1, UNKNOWN = 2;
-        final int state;
-
-        OrderLookup(final int state) {
-            this.state = state;
-        }
-
-        static final OrderLookup RUNNING_ORDER = new OrderLookup(RUNNING);
-        static final OrderLookup FINISHED_ORDER = new OrderLookup(FINISHED);
-        static final OrderLookup UNKNOWN_ORDER = new OrderLookup(UNKNOWN);
-    }
-
     /**
      * 先查本网络，再查记录里那台 CPU 的坐标。
      * 只有拿到确凿证据才判结束；一切“看不到”都算未知，绝不重下。
@@ -271,6 +257,12 @@ public class TileStockMaintainer extends AENetworkTile implements ITickable {
                 final ICraftingLink link = cluster.getLastCraftingLink();
                 if (link == null || !craftId.equals(link.getCraftingID())) { continue; }
                 if (cluster.isBusy()) {
+                    // 见到这单真的在跑：有的 CPU 压根给不出方块坐标（虚拟合成处理器），
+                    // 只能靠这个标记在它消失时判断"确实跑完了"。
+                    if (!rule.seenRunning) {
+                        rule.seenRunning = true;
+                        this.saveChanges();
+                    }
                     this.rememberCore(rule, cluster);
                     return OrderLookup.RUNNING_ORDER;
                 }
@@ -282,11 +274,11 @@ public class TileStockMaintainer extends AENetworkTile implements ITickable {
         }
         // 本网络没有这台 CPU 的痕迹：去记录位置看它是否已换任务。
         final OrderLookup remembered = this.lookupRemembered(rule);
-        // 记录位置也看不到，就是证据不足：保留关联等待，不以超时重下。
-        return remembered == null ? OrderLookup.UNKNOWN_ORDER : remembered;
+        // 记录位置也看不到：见过它就说明跑完了；从没见过才是真的证据不足。
+        return remembered == null ? OrderLookup.forMissingCpu(rule.seenRunning) : remembered;
     }
 
-    /** 查记录位置那台 CPU；返回 null 表示没有可用线索。 */
+    /** 查记录位置那台 CPU；返回 null 表示没有可用线索（区块没加载或没有坐标，属真正的未知）。 */
     private OrderLookup lookupRemembered(final MaintainerRule rule) {
         if (!rule.hasCpuPos) { return null; }
         final World world = this.dimensionWorld(rule.cpuDim);
@@ -295,17 +287,16 @@ public class TileStockMaintainer extends AENetworkTile implements ITickable {
         // 不主动加载区块：没加载就是没证据，等它回来。
         if (!world.isBlockLoaded(pos)) { return null; }
         final TileEntity tile = world.getTileEntity(pos);
-        if (!(tile instanceof TileCraftingTile)) { return null; }
+        if (!(tile instanceof TileCraftingTile)) {
+            return OrderLookup.forRememberedCpu(false, false, false, false);
+        }
         final IAECluster cluster = ((TileCraftingTile) tile).getCluster();
         if (!(cluster instanceof CraftingCPUCluster)) { return null; }
         final CraftingCPUCluster cpu = (CraftingCPUCluster) cluster;
         final ICraftingLink link = cpu.getLastCraftingLink();
-        if (link != null && rule.craftId.equals(link.getCraftingID())) {
-            return cpu.isBusy() ? OrderLookup.RUNNING_ORDER : OrderLookup.FINISHED_ORDER;
-        }
-        // 这台 CPU 已经有别的 craftID：原单不再占用它，判定结束（不区分完成与取消）。
-        if (link != null) { return OrderLookup.FINISHED_ORDER; }
-        return OrderLookup.UNKNOWN_ORDER;
+        final boolean hasLink = link != null;
+        final boolean matches = hasLink && rule.craftId.equals(link.getCraftingID());
+        return OrderLookup.forRememberedCpu(true, matches, hasLink, cpu.isBusy());
     }
 
     private World dimensionWorld(final int dimension) {

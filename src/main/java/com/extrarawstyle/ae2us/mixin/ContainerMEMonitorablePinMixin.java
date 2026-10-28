@@ -11,6 +11,7 @@ import appeng.api.networking.crafting.ICraftingGrid;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.container.AEBaseContainer;
 import appeng.container.implementations.ContainerMEMonitorable;
+import appeng.me.cluster.implementations.CraftingCPUCluster;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
@@ -97,10 +98,20 @@ public abstract class ContainerMEMonitorablePinMixin {
                 continue;
             }
             final ItemStack definition = output.getDefinition();
-            if (definition != null && !definition.isEmpty()) {
+            if (definition != null && !definition.isEmpty() && ae2us$placedByPlayer(cpu)) {
                 busy.add(definition);
             }
         }
         return busy;
+    }
+
+    /**
+     * 这一单是不是玩家亲手下的。库存维持器之类的机器订单走 MachineSource，
+     * CPU 里记录的发起者为 null，不该置顶——置顶是给"我刚下的东西"用的。
+     */
+    @Unique
+    private static boolean ae2us$placedByPlayer(final ICraftingCPU cpu) {
+        return cpu instanceof CraftingCPUCluster
+                && ((CraftingCPUClusterRequesterAccessor) cpu).ae2us$requestingPlayer() != null;
     }
 }

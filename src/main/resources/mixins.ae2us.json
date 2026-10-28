@@ -22,12 +22,14 @@
     "PacketJEIRecipeCategoryMixin",
     "ContainerMEMonitorablePinMixin",
     "CraftingCPUClusterMixin",
+    "CraftingCPUClusterRequesterAccessor",
     "CellTypeLimitMixin"
   ],
   "client": [
     "client.AEBaseGuiMixin",
     "client.AEBaseGuiPinMixin",
     "client.GuiCraftConfirmMixin",
+    "client.GuiCraftingCPUActiveFirstMixin",
     "client.GuiInterfaceMixin",
     "client.GuiMEMonitorableUploadMixin",
     "client.GuiScreenAccessor",

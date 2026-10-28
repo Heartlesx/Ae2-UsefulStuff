@@ -46,4 +46,23 @@ public final class MaintainerStatus {
     public static boolean isAttemptResult(final int status) {
         return status == NO_PATTERN || status == SUBMIT_FAILED || status == WAITING_CPU;
     }
+
+    /** 状态常量 → 语言键后缀（`ae2us.maintainer.state.*`）。界面与 TOP 共用一份。 */
+    public static String key(final int status) {
+        switch (status) {
+            case DISABLED: return "disabled";
+            case OFFLINE: return "offline";
+            case INCOMPLETE: return "incomplete";
+            case STOCKED: return "stocked";
+            case QUEUED: return "queued";
+            case CALCULATING: return "calculating";
+            case NO_PATTERN: return "no_pattern";
+            case WAITING_CPU: return "waiting_cpu";
+            case CRAFTING: return "crafting";
+            case SUBMIT_FAILED: return "submit_failed";
+            case ORDER_UNKNOWN: return "order_unknown";
+            case NO_DISCRETIZER: return "no_discretizer";
+            default: return "";
+        }
+    }
 }

@@ -39,6 +39,8 @@ public final class MaintainerNbt {
             if (rule.craftId != null) {
                 tag.setString("craftId", rule.craftId);
                 tag.setLong("orderBatch", rule.orderBatch);
+                // 见过这单在跑：CPU 完成后从网络消失时，靠它判定"确实跑完了"。
+                if (rule.seenRunning) { tag.setBoolean("seenRunning", true); }
                 if (rule.hasCpuPos) {
                     tag.setBoolean("hasCpu", true);
                     tag.setInteger("cpuDim", rule.cpuDim);
@@ -75,6 +77,7 @@ public final class MaintainerNbt {
             if (!craftId.isEmpty()) {
                 rule.craftId = craftId;
                 rule.orderBatch = Math.max(0L, tag.getLong("orderBatch"));
+                rule.seenRunning = tag.getBoolean("seenRunning");
                 if (tag.getBoolean("hasCpu")) {
                     rule.hasCpuPos = true;
                     rule.cpuDim = tag.getInteger("cpuDim");

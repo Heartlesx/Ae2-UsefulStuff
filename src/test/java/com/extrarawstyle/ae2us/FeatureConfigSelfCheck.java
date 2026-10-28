@@ -127,6 +127,7 @@ public final class FeatureConfigSelfCheck {
                             expected = FeatureConfig.terminalCraftableMarksEnabled() || FeatureConfig.recipeCraftableMarksEnabled();
                             break;
                         case "ContainerMEMonitorablePinMixin":
+                        case "CraftingCPUClusterRequesterAccessor":
                         case "client.ItemRepoPinMixin":
                         case "client.AEBaseGuiPinMixin":
                             expected = FeatureConfig.craftedItemPinEnabled();
