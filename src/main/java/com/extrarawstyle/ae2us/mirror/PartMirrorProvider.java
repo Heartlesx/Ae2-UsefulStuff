@@ -9,6 +9,7 @@ import appeng.api.networking.crafting.ICraftingLink;
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.networking.crafting.ICraftingProviderHelper;
 import appeng.api.networking.events.MENetworkChannelsChanged;
+import appeng.api.networking.events.MENetworkEventSubscribe;
 import appeng.api.networking.events.MENetworkPowerStatusChange;
 import appeng.api.networking.ticking.IGridTickable;
 import appeng.api.networking.ticking.TickRateModulation;
@@ -169,8 +170,10 @@ public final class PartMirrorProvider extends PartBasicState
 
     @Override
     public TickRateModulation tickingRequest(final IGridNode node, final int ticksSinceLastCall) {
+        // 断电/重算期间只跳过同步，绝不能让设备睡过去：AE2 把睡着的设备移出待 tick 队列后，
+        // 只有 alertDevice/wakeDevice 能叫醒它，而镜像没有任何一处会调——睡一次就是永久停摆。
         if (!this.getProxy().isActive()) {
-            return TickRateModulation.SLEEP;
+            return TickRateModulation.SLOWER;
         }
 
         final TickRateModulation result = this.duality.tickingRequest(node, ticksSinceLastCall);
@@ -184,6 +187,14 @@ public final class PartMirrorProvider extends PartBasicState
         }
 
         // 同步本身要一直跑，所以不让芯片把它判成空闲（SLEEP 之后就再也不会被叫醒）。
+        return keepAwake(result);
+    }
+
+    /**
+     * 把 AE2 的休眠信号一律换成 SLOWER。镜像没有任何唤醒自己的途径，
+     * 所以它绝不能以 SLEEP 收场——这一条由自检在运行时直接验。
+     */
+    static TickRateModulation keepAwake(final TickRateModulation result) {
         return result == TickRateModulation.SLEEP ? TickRateModulation.SLOWER : result;
     }
 
@@ -365,12 +376,17 @@ public final class PartMirrorProvider extends PartBasicState
 
     // ---------------------------------------------------------------- 透传
 
+    // 这两个 @MENetworkEventSubscribe 不能省：AE2 的事件总线按注解扫描 getMethods()，
+    // 而注解没有 @Inherited——重写父类同名方法会把父类那两条注解挡掉，镜像就收不到任何网络事件了。
+    // 父类只会 markForUpdate 刷外观，接口部件（PartInterface）则是叫 notifyNeighbors 顺手唤醒自己。
     @Override
+    @MENetworkEventSubscribe
     public void chanRender(final MENetworkChannelsChanged c) {
         this.duality.notifyNeighbors();
     }
 
     @Override
+    @MENetworkEventSubscribe
     public void powerRender(final MENetworkPowerStatusChange c) {
         this.duality.notifyNeighbors();
     }

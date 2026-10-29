@@ -25,6 +25,16 @@ import java.io.IOException;
 public final class StockMaintainerNetwork {
     public static final int SET_TARGET_ITEM = 0, CLEAR = 1, SET_THRESHOLD = 2, SET_BATCH = 3,
             SET_ENABLED = 4, PAGE = 5, SET_TARGET_FLUID = 6;
+
+    /**
+     * 动作包里 {@code text} 字段的长度上限。写入与读取必须用同一个值：
+     * 客户端写超长、服务端按小上限读，会让 Netty 直接抛 DecoderException 把连接踢掉。
+     * 流体目标把整份 NBT 序列化成 JSON 塞在这个字段里，注册名长的流体轻松过百字符。
+     */
+    private static final int ACTION_TEXT_MAX = 4096;
+    /** 界面行标题（目标显示名）的长度上限，同样读写一致。 */
+    private static final int LABEL_MAX = 256;
+
     private static SimpleNetworkWrapper channel;
 
     private StockMaintainerNetwork() { }
@@ -37,6 +47,14 @@ public final class StockMaintainerNetwork {
 
     public static void action(final int window, final int operation, final int index, final String text,
                               final ItemStack stack) {
+        // 超长文本不发出去：宁可这一次操作没生效，也不要把连接踢掉。
+        // 服务端按 ACTION_TEXT_MAX 读取，写超了 Netty 会直接抛 DecoderException。
+        if (text != null && text.length() > ACTION_TEXT_MAX) {
+            net.minecraftforge.fml.common.FMLLog.log.warn(
+                    "AE2US: 维持器动作 {} 的文本过长（{} > {}），本次操作已忽略",
+                    operation, text.length(), ACTION_TEXT_MAX);
+            return;
+        }
         channel.sendToServer(new Action(window, operation, index, text, stack));
     }
 
@@ -65,7 +83,7 @@ public final class StockMaintainerNetwork {
             this.window = packet.readInt();
             this.operation = packet.readUnsignedByte();
             this.index = packet.readUnsignedByte();
-            this.text = packet.readString(64);
+            this.text = packet.readString(ACTION_TEXT_MAX);
             try {
                 this.stack = packet.readItemStack();
             } catch (final IOException truncated) {
@@ -79,7 +97,7 @@ public final class StockMaintainerNetwork {
             packet.writeInt(this.window);
             packet.writeByte(this.operation);
             packet.writeByte(this.index);
-            packet.writeString(this.text);
+            packet.writeString(this.text == null ? "" : this.text);
             packet.writeItemStack(this.stack);
         }
     }
@@ -231,8 +249,8 @@ public final class StockMaintainerNetwork {
                 this.thresholds[i] = packet.readLong();
                 this.batches[i] = packet.readLong();
                 this.counts[i] = packet.readLong();
-                this.labels[i] = packet.readString(96);
-                this.targets[i] = packet.readString(4096);
+                this.labels[i] = packet.readString(LABEL_MAX);
+                this.targets[i] = packet.readString(ACTION_TEXT_MAX);
                 try {
                     this.icons[i] = packet.readItemStack();
                 } catch (final IOException truncated) {
@@ -258,10 +276,16 @@ public final class StockMaintainerNetwork {
                 packet.writeLong(this.thresholds[i]);
                 packet.writeLong(this.batches[i]);
                 packet.writeLong(this.counts[i]);
-                packet.writeString(this.labels[i] == null ? "" : this.labels[i]);
+                packet.writeString(clip(this.labels[i], LABEL_MAX));
                 packet.writeString(this.targets[i] == null ? "" : this.targets[i]);
                 packet.writeItemStack(this.icons[i] == null ? ItemStack.EMPTY : this.icons[i]);
             }
+        }
+
+        /** 行标题只用来显示，超长就截断——读侧上限与这里必须一致。 */
+        private static String clip(final String text, final int max) {
+            if (text == null) { return ""; }
+            return text.length() <= max ? text : text.substring(0, max);
         }
     }
 

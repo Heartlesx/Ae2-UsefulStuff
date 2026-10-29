@@ -562,6 +562,84 @@ public final class StockMaintainerSelfCheck {
         check("{Fluid:\"water\"}".equals(decoded.targets[2]), "fluid target payload roundtrip");
         check(ItemStack.areItemStacksEqual(decoded.icons[0], state.icons[0]), "row icon roundtrip");
         check(decoded.icons[1].isEmpty(), "empty row icon stays empty");
+
+        fluidPayloadChecks();
+    }
+
+    /**
+     * 流体目标的动作包必须能装下真实的 NBT 文本。
+     * <p>
+     * 实机崩溃：把「简谐声子物质（HPM）」拖进维持器，客户端把整份流体 NBT 序列化成
+     * 68 字符的 JSON 放进 text 字段，而服务端按 64 读取，Netty 直接抛
+     * {@code DecoderException: The received string length is longer than maximum allowed (68 > 64)}
+     * 并把连接踢掉。这里用一个同样长度的真实形状 NBT 走完整编解码，锁住读写上限一致。
+     */
+    private static void fluidPayloadChecks() {
+        final String payload = "{FluidName:\"gtlitecore:harmonic_phonon_matter_hyperion_field\",Amount:1}";
+        check(payload.length() > 64, "the repro payload really exceeds the old 64-char limit");
+        check(payload.length() <= 4096, "the repro payload fits the new limit");
+
+        final StockMaintainerNetwork.Action action = newAction(7, StockMaintainerNetwork.SET_TARGET_FLUID,
+                3, payload, ItemStack.EMPTY);
+        final ByteBuf buffer = Unpooled.buffer();
+        try {
+            action.toBytes(buffer);
+            final StockMaintainerNetwork.Action decoded =
+                    newAction(0, 0, 0, "", ItemStack.EMPTY);
+            // 这一步就是崩溃点：旧上限 64 会在这里抛 DecoderException。
+            decoded.fromBytes(buffer);
+            check(payload.equals(readText(decoded)), "a long fluid NBT payload survives the roundtrip");
+            check(readIndex(decoded) == 3, "the row index survives alongside a long payload");
+        } finally {
+            buffer.release();
+        }
+
+        // 行标题也走同一份上限：显示名长的流体不能把状态包撑爆。
+        final StringBuilder longLabel = new StringBuilder();
+        for (int i = 0; i < 300; i++) { longLabel.append('x'); }
+        final StockMaintainerNetwork.State state = new StockMaintainerNetwork.State();
+        state.labels[0] = longLabel.toString();
+        final ByteBuf stateBuffer = Unpooled.buffer();
+        try {
+            state.toBytes(stateBuffer);
+            final StockMaintainerNetwork.State decoded = new StockMaintainerNetwork.State();
+            decoded.fromBytes(stateBuffer);
+            check(decoded.labels[0].length() == 256, "an over-long label is clipped, not sent raw");
+        } finally {
+            stateBuffer.release();
+        }
+    }
+
+    /** Action 的构造器是 private，自检用反射造，避免为了测试放宽生产代码的可见性。 */
+    private static StockMaintainerNetwork.Action newAction(final int window, final int operation,
+            final int index, final String text, final ItemStack stack) {
+        try {
+            final java.lang.reflect.Constructor<StockMaintainerNetwork.Action> ctor =
+                    StockMaintainerNetwork.Action.class.getDeclaredConstructor(
+                            int.class, int.class, int.class, String.class, ItemStack.class);
+            ctor.setAccessible(true);
+            return ctor.newInstance(window, operation, index, text, stack);
+        } catch (final ReflectiveOperationException impossible) {
+            throw new AssertionError("cannot build a network action for the check", impossible);
+        }
+    }
+
+    private static String readText(final StockMaintainerNetwork.Action action) {
+        return (String) readField(action, "text");
+    }
+
+    private static int readIndex(final StockMaintainerNetwork.Action action) {
+        return (Integer) readField(action, "index");
+    }
+
+    private static Object readField(final Object target, final String name) {
+        try {
+            final java.lang.reflect.Field field = target.getClass().getDeclaredField(name);
+            field.setAccessible(true);
+            return field.get(target);
+        } catch (final ReflectiveOperationException impossible) {
+            throw new AssertionError("cannot read " + name + " for the check", impossible);
+        }
     }
 
     // ---------------------------------------------------------------- 资源

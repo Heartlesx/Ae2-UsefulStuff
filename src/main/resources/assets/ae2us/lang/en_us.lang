@@ -211,3 +211,4 @@ ae2us.mirror.binder.not_bound=This mirror is not bound to that interface: %s
 ae2us.mirror.binder.cleared=Cleared the selection on the binder
 ae2us.mirror.binder.nothing_selected=Nothing was selected on the binder
 ae2us.mirror.binder.source_gone=The selected interface is gone: %s
+ae2us.pickup.no_hotbar_space=No free hotbar slot; clear one first

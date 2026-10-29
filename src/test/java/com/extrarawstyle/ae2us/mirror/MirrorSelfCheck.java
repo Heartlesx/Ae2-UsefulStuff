@@ -93,6 +93,39 @@ public final class MirrorSelfCheck {
         check(!contains(ticking, "appeng/helpers/DualityInterface.getTickingRequest"),
                 "不用源接口的休眠策略");
 
+        // 一旦返回 SLEEP，AE2 会把这个节点移出待 tick 队列，只有 alertDevice/wakeDevice 能叫回来；
+        // 镜像没有任何一处调这两个，所以睡一次就是永久停摆（实机表现为 TOP 一直 0/288，
+        // 重新绑定也没用，只有区块/网格重载能恢复）。
+        final Set<String> tickBody = methodRefs(PartMirrorProvider.class, "tickingRequest");
+        check(!tickBody.contains("appeng/api/networking/ticking/TickRateModulation.SLEEP"
+                        + "Lappeng/api/networking/ticking/TickRateModulation;"),
+                "tickingRequest 本身不产生 SLEEP（只允许经 keepAwake 转换）");
+        check(contains(tickBody, "com/extrarawstyle/ae2us/mirror/PartMirrorProvider.keepAwake"),
+                "tickingRequest 的返回值经 keepAwake 兜底");
+        check(tickBody.contains("appeng/api/networking/ticking/TickRateModulation.SLOWER"
+                        + "Lappeng/api/networking/ticking/TickRateModulation;"),
+                "断掉激活时退回 SLOWER 而不是睡眠");
+
+        // 运行时验：无论 AE2 那边回什么，镜像的出口都不能是 SLEEP。
+        check(PartMirrorProvider.keepAwake(appeng.api.networking.ticking.TickRateModulation.SLEEP)
+                        == appeng.api.networking.ticking.TickRateModulation.SLOWER,
+                "keepAwake 把 SLEEP 换成 SLOWER");
+        for (final appeng.api.networking.ticking.TickRateModulation mode
+                : appeng.api.networking.ticking.TickRateModulation.values()) {
+            check(PartMirrorProvider.keepAwake(mode)
+                            != appeng.api.networking.ticking.TickRateModulation.SLEEP,
+                    "keepAwake 出参不会有 SLEEP：" + mode);
+        }
+
+        // 事件订阅注解不能漏：总线按注解扫 getMethods()，注解没 @Inherited，
+        // 重写父类方法会把父类那两条注解挡掉（漏了就等于收不到任何网络事件）。
+        check(hasAnnotation(PartMirrorProvider.class, "chanRender",
+                        "appeng.api.networking.events.MENetworkChannelsChanged"),
+                "chanRender 带 @MENetworkEventSubscribe");
+        check(hasAnnotation(PartMirrorProvider.class, "powerRender",
+                        "appeng.api.networking.events.MENetworkPowerStatusChange"),
+                "powerRender 带 @MENetworkEventSubscribe");
+
         // 解绑只解选中的那一条。
         final Set<String> unbind = methodRefs(PartMirrorProvider.class, "unbind");
         check(contains(unbind, "java/util/List.remove(I)Ljava/lang/Object;"), "unbind 只移除命中的一条");
@@ -235,6 +268,12 @@ public final class MirrorSelfCheck {
                     }
 
                     @Override
+                    public void visitFieldInsn(final int opcode, final String owner, final String name2,
+                            final String desc) {
+                        refs.add(owner + "." + name2 + desc);
+                    }
+
+                    @Override
                     public void visitTypeInsn(final int opcode, final String type) {
                         refs.add("type:" + type);
                     }
@@ -257,6 +296,23 @@ public final class MirrorSelfCheck {
     private static boolean hasMethod(final Class<?> type, final String name, final String desc) {
         for (final java.lang.reflect.Method method : type.getDeclaredMethods()) {
             if (method.getName().equals(name) && describe(method).equals(desc)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 这个类自己声明的方法上有没有挂 @MENetworkEventSubscribe（参数类型用来挑重载）。 */
+    private static boolean hasAnnotation(final Class<?> type, final String methodName, final String eventType) {
+        for (final java.lang.reflect.Method method : type.getDeclaredMethods()) {
+            if (!method.getName().equals(methodName)) {
+                continue;
+            }
+            final Class<?>[] params = method.getParameterTypes();
+            if (params.length != 1 || !params[0].getName().equals(eventType)) {
+                continue;
+            }
+            if (method.isAnnotationPresent(appeng.api.networking.events.MENetworkEventSubscribe.class)) {
                 return true;
             }
         }

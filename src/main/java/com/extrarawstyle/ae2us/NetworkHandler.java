@@ -33,6 +33,7 @@ public final class NetworkHandler {
         com.extrarawstyle.ae2us.alarm.AlarmNetwork.register(channel);
         com.extrarawstyle.ae2us.craftpin.CraftedItemPinNetwork.register(channel);
         com.extrarawstyle.ae2us.maintainer.StockMaintainerNetwork.register(channel);
+        com.extrarawstyle.ae2us.pickup.PickupNetwork.register(channel);
     }
 
     public static void sendToggle() {

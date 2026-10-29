@@ -270,6 +270,13 @@ task verifyMirrorProvider(type: JavaExec) {
 
 check.dependsOn verifyMirrorProvider
 
+task verifyMiddleClickPickup(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.pickup.PickupSelfCheck'
+}
+
+check.dependsOn verifyMiddleClickPickup
+
 task verifyCraftingStatusOrder(type: JavaExec) {
     classpath = sourceSets.test.runtimeClasspath
     main = 'com.extrarawstyle.ae2us.CraftingStatusOrderSelfCheck'

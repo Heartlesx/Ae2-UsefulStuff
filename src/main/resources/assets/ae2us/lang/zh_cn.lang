@@ -211,3 +211,4 @@ ae2us.mirror.binder.not_bound=这个镜像没有绑定该接口：%s
 ae2us.mirror.binder.cleared=已清空绑定卡上的选定
 ae2us.mirror.binder.nothing_selected=绑定卡上没有选定
 ae2us.mirror.binder.source_gone=选定的接口已经不在了：%s
+ae2us.pickup.no_hotbar_space=快捷栏没有空位，先腾出一格再来
