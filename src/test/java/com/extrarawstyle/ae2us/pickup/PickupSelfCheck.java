@@ -21,8 +21,8 @@ import java.util.Set;
 /**
  * 中键拾取的离线自检。不启动游戏，不碰 AEApi 单例（那需要 FML 运行环境）。
  * <p>
- * 锁死的是各条决策的边界：只在快捷栏找空位、背包已有就不取物、
- * 最多一次一整堆、没有样板就什么都不做、开关默认开。
+ * 锁死的是各条决策的边界：背包已有就弄到手上（切格/交换都在服务端做）、
+ * 取物落到手上格（先腾手）、最多一次一整堆、没有样板就什么都不做、开关默认开。
  */
 public final class PickupSelfCheck {
 
@@ -63,18 +63,23 @@ public final class PickupSelfCheck {
         inventory.mainInventory.set(4, ItemStack.EMPTY);
         check(PickupLogic.firstEmptyHotbarSlot(inventory) == 4, "腾出的第 4 格被认成空位");
 
-        // 背包已有：返回所在槽位，中键不取物只切格。
+        // 背包已有：返回所在槽位，中键不取物，由服务端弄到手上。
         final InventoryPlayer held = new InventoryPlayer(null);
         held.mainInventory.set(6, new ItemStack(Items.CLAY_BALL, 3));
-        final int found = PickupLogic.hotbarSlotOf(held, new ItemStack(Items.CLAY_BALL, 1));
+        final int found = PickupLogic.slotOf(held, new ItemStack(Items.CLAY_BALL, 1));
         check(found == 6, "背包第 6 格有黏土球时返回 6（数量不同也算有）");
-        check(PickupLogic.hotbarSlotOf(held, new ItemStack(Items.STICK)) == -1, "没有的物品返回 -1");
+        check(PickupLogic.slotOf(held, new ItemStack(Items.STICK)) == -1, "没有的物品返回 -1");
 
-        // 主背包（快捷栏之外）里的不算"手边有"。
+        // 主背包里的也算"有"：之前只认快捷栏，会误判没货去弹下单界面。
         final InventoryPlayer deep = new InventoryPlayer(null);
         deep.mainInventory.set(30, new ItemStack(Items.CLAY_BALL, 1));
-        check(PickupLogic.hotbarSlotOf(deep, new ItemStack(Items.CLAY_BALL, 1)) == -1,
-                "只在主背包里的不算手边有");
+        check(PickupLogic.slotOf(deep, new ItemStack(Items.CLAY_BALL, 1)) == 30,
+                "只在主背包里的也算有，返回主背包槽号");
+
+        // 两边都有时优先认快捷栏的（离手最近）。
+        deep.mainInventory.set(2, new ItemStack(Items.CLAY_BALL, 1));
+        check(PickupLogic.slotOf(deep, new ItemStack(Items.CLAY_BALL, 1)) == 2,
+                "快捷栏和主背包都有时优先快捷栏");
     }
 
     // ---------------------------------------------------------------- 数量
@@ -118,6 +123,29 @@ public final class PickupSelfCheck {
 
         // 开关关掉就什么都不做。
         check(contains(handle, "com/extrarawstyle/ae2us/pickup/PickupTerminals.find"), "服务端自己找终端");
+
+        // 背包已有由服务端弄到手上（moveToHand）：切选中格要发 SPacketHeldItemChange，
+        // 格子交换要走容器同步——客户端单方面改会和服务端脱节。
+        check(contains(handle, "com/extrarawstyle/ae2us/pickup/PickupLogic.slotOf"),
+                "背包已有检查覆盖主背包（slotOf）");
+        final Set<String> move = methodRefs(PickupService.class, "moveToHand");
+        check(contains(move, "net/minecraft/network/play/server/SPacketHeldItemChange"),
+                "切选中格发 SPacketHeldItemChange 同步");
+        check(containsMethod(move, "detectAndSendChanges"), "交换后的格子改动走容器同步");
+        check(containsMethod(handle, "detectAndSendChanges"), "取物落格也走容器同步");
+
+        // 取物落到手上格；手上格被占时先腾手，腾不开就提示（不挤别人的格子）。
+        check(contains(handle, "com/extrarawstyle/ae2us/pickup/PickupLogic.firstEmptyHotbarSlot"),
+                "腾手用的是快捷栏空格");
+        check(containsString(handle, "ae2us.pickup.no_hotbar_space"), "腾不开时提示快捷栏没有空位");
+
+        // "背包已有"必须在库存探测之前：网络没货时（刚从中键取走最后一个就是没货）
+        // 走不到排在后面的背包检查，会误判没货去弹下单界面。
+        final byte[] handleBytes = readClass("/com/extrarawstyle/ae2us/pickup/PickupService.class");
+        final String handleBody = bodyOf(handleBytes, "handle");
+        final int slotPos = handleBody.indexOf("slotOf;");
+        final int simPos = handleBody.indexOf("simulateExtract;");
+        check(slotPos >= 0 && simPos >= 0 && slotPos < simPos, "背包已有检查排在库存探测之前");
 
         // 有没有货不能查网络清单，必须直接问"能抽多少"（SIMULATE）。
         // 清单与真实可抽取量并不总一致：无限元件这类存储在清单里可能给出数量 0、
@@ -174,8 +202,6 @@ public final class PickupSelfCheck {
                 "终端不可用时完全不干预");
         // 真正的处理放在逻辑 tick 里：鼠标事件按帧触发，帧内插值数据还没稳定，
         // 在帧里做射线会打偏（实机表现就是"跑起来要按好几下"）。
-        check(contains(tick, "com/extrarawstyle/ae2us/pickup/PickupLogic.firstEmptyHotbarSlot"),
-                "逻辑 tick 里判断快捷栏有没有位");
         check(contains(tick, "com/extrarawstyle/ae2us/pickup/PickupNetwork.request"), "发请求给服务端");
         check(containsMethod(mouse, "cancel"), "鼠标事件里取消原版中键");
 

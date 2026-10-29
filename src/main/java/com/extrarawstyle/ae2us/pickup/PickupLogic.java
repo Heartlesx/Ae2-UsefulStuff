@@ -21,12 +21,13 @@ public final class PickupLogic {
     }
 
     /**
-     * 背包里（含快捷栏）已经有这个物品时，返回它所在的快捷栏槽号；否则返回 -1。
+     * 背包里已经有这个物品时，返回它所在的槽号（快捷栏 0~8 或主背包 9~35）；否则返回 -1。
      * <p>
-     * 只认快捷栏：主背包里的不算"手边有"，那样中键还得先去翻背包。
+     * 之前只认快捷栏，主背包里的会被当成"背包没有"，网络也没货时就误弹下单界面。
+     * 扫描从 0 开始：快捷栏和主背包都有时优先认快捷栏的（离手最近）。
      */
-    public static int hotbarSlotOf(final InventoryPlayer inventory, final ItemStack what) {
-        for (int slot = 0; slot < HOTBAR_SIZE; slot++) {
+    public static int slotOf(final InventoryPlayer inventory, final ItemStack what) {
+        for (int slot = 0; slot < inventory.mainInventory.size(); slot++) {
             final ItemStack present = inventory.mainInventory.get(slot);
             if (!present.isEmpty() && sameItem(present, what)) {
                 return slot;

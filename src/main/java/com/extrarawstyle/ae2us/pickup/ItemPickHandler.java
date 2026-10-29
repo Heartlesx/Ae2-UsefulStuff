@@ -3,7 +3,6 @@ package com.extrarawstyle.ae2us.pickup;
 import com.extrarawstyle.ae2us.Ae2us;
 import com.extrarawstyle.ae2us.FeatureConfig;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.RayTraceResult;
 import net.minecraftforge.client.event.MouseEvent;
@@ -81,18 +80,9 @@ public final class ItemPickHandler {
         if (picked.isEmpty()) {
             return;
         }
-
-        final EntityPlayerSP player = minecraft.player;
-        final int existing = PickupLogic.hotbarSlotOf(player.inventory, picked);
-        if (existing >= 0) {
-            // 背包里已经有：只切快捷栏，不取物。
-            player.inventory.currentItem = existing;
-            return;
-        }
-
-        // 快捷栏没有空位就交给服务端提示。
-        final boolean noRoom = PickupLogic.firstEmptyHotbarSlot(player.inventory) < 0;
-        PickupNetwork.request(picked, noRoom);
+        // 背包已有怎么切、取到放哪，全由服务端决定：它要改两个格子，
+        // 客户端单方面改会和服务端脱节。
+        PickupNetwork.request(picked);
     }
 
     /**

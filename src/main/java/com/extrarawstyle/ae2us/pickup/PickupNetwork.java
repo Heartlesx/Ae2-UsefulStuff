@@ -31,26 +31,23 @@ public final class PickupNetwork {
         channel.registerMessage(RequestHandler.class, Request.class, 24, Side.SERVER);
     }
 
-    /** 客户端：我要这个东西。noRoom 只用来决定失败时怎么提示，服务端会自己再判一次。 */
-    public static void request(final ItemStack wanted, final boolean noRoom) {
-        channel.sendToServer(new Request(wanted, noRoom));
+    /** 客户端：我要这个东西。 */
+    public static void request(final ItemStack wanted) {
+        channel.sendToServer(new Request(wanted));
     }
 
     public static final class Request implements IMessage {
         private ItemStack wanted = ItemStack.EMPTY;
-        private boolean noRoom;
 
         public Request() { }
 
-        private Request(final ItemStack wanted, final boolean noRoom) {
+        private Request(final ItemStack wanted) {
             this.wanted = wanted;
-            this.noRoom = noRoom;
         }
 
         @Override
         public void fromBytes(final ByteBuf buffer) {
             final PacketBuffer packet = new PacketBuffer(buffer);
-            this.noRoom = packet.readBoolean();
             try {
                 this.wanted = packet.readItemStack();
             } catch (final IOException truncated) {
@@ -61,7 +58,6 @@ public final class PickupNetwork {
         @Override
         public void toBytes(final ByteBuf buffer) {
             final PacketBuffer packet = new PacketBuffer(buffer);
-            packet.writeBoolean(this.noRoom);
             packet.writeItemStack(this.wanted);
         }
     }
@@ -72,8 +68,7 @@ public final class PickupNetwork {
             final EntityPlayerMP player = context.getServerHandler().player;
             if (player != null) {
                 final ItemStack wanted = message.wanted;
-                final boolean noRoom = message.noRoom;
-                player.server.addScheduledTask(() -> PickupService.handle(player, wanted, noRoom));
+                player.server.addScheduledTask(() -> PickupService.handle(player, wanted));
             }
             return null;
         }
