@@ -54,6 +54,8 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
     private static final int TOGGLE_X = 330;
     /** 该行有未提交的数值改动时，状态格临时变成「确定」按钮。 */
     private static final int CONFIRM_W = 58;
+    /** 每行第二个开关：本条的材料不够整批时减量下单。窗口因此加宽到 376。 */
+    private static final int SMART_TOGGLE_X = 352;
 
     private final ContainerStockMaintainer container;
     private final GuiTextField[] thresholds = new GuiTextField[ROWS];
@@ -67,7 +69,7 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
     public GuiStockMaintainer(final ContainerStockMaintainer container) {
         super(container);
         this.container = container;
-        this.xSize = 356;
+        this.xSize = 376;
         this.ySize = 272;
     }
 
@@ -84,8 +86,8 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
             this.batches[i] = this.field(this.batches[i], 100 + i, BATCH_X, y);
         }
         this.buttonList.clear();
-        this.buttonList.add(new GuiButton(0, this.guiLeft + 252, this.guiTop + 178, 16, 14, "<"));
-        this.buttonList.add(new GuiButton(1, this.guiLeft + 298, this.guiTop + 178, 16, 14, ">"));
+        this.buttonList.add(new GuiButton(0, this.guiLeft + 272, this.guiTop + 178, 16, 14, "<"));
+        this.buttonList.add(new GuiButton(1, this.guiLeft + 318, this.guiTop + 178, 16, 14, ">"));
         Keyboard.enableRepeatEvents(true);
         this.syncFromState();
     }
@@ -271,7 +273,13 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
                 this.send(StockMaintainerNetwork.SET_ENABLED, index, state.enabled[i] ? "0" : "1", ItemStack.EMPTY);
                 return;
             }
-            // 状态格被换成「确定」按钮时点它：只提交本行，不牵动别的行。
+            if (state != null && state.configured[i]
+                    && this.isPointInRegion(SMART_TOGGLE_X, rowY + 4, 16, 9, x, y)) {
+                this.commitAll();
+                this.send(StockMaintainerNetwork.SET_SMART_PART_BATCH, index,
+                        state.smartPartBatches[i] ? "0" : "1", ItemStack.EMPTY);
+                return;
+            }            // 状态格被换成「确定」按钮时点它：只提交本行，不牵动别的行。
             if (this.dirty(i) && this.isPointInRegion(STATE_X, rowY + 4, CONFIRM_W, 9, x, y)) {
                 this.confirmRow(i);
                 return;
@@ -365,17 +373,17 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
     @Override
     public void drawBG(final int x, final int y, final int mouseX, final int mouseY) {
         drawRect(x, y, x + this.xSize, y + this.ySize, 0xff344b4d);
-        drawRect(x + 2, y + 2, x + 354, y + 270, 0xffd9e2dc);
-        drawRect(x + 2, y + 2, x + 354, y + 25, 0xff263a40);
+        drawRect(x + 2, y + 2, x + 374, y + 270, 0xffd9e2dc);
+        drawRect(x + 2, y + 2, x + 374, y + 25, 0xff263a40);
         drawRect(x + 2, y + 2, x + 5, y + 25, 0xff3cd4b2);
         this.drawHeaderSignal(x, y);
-        drawRect(x + 6, y + 28, x + 350, y + 39, 0xffb6c8c0);
+        drawRect(x + 6, y + 28, x + 370, y + 39, 0xffb6c8c0);
         final StockMaintainerNetwork.State state = this.container.state;
         for (int i = 0; i < ROWS; i++) {
             final int rowY = y + TOP + i * ROW_H;
             final boolean configured = state != null && state.configured[i];
             final boolean warning = state != null && configured && this.warning(state.statuses[i]);
-            drawRect(x + 6, rowY, x + 350, rowY + 16,
+            drawRect(x + 6, rowY, x + 370, rowY + 16,
                     warning ? 0xfff3dedb : i % 2 == 0 ? 0xffe6eee8 : 0xffedf3ed);
             if (configured) {
                 drawRect(x + 6, rowY, x + 9, rowY + 16, warning ? 0xffdc544e : 0xff4eb499);
@@ -387,6 +395,7 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
             this.drawFieldBox(x, rowY, BATCH_X, warning);
             this.drawConfirm(x, rowY, this.dirty(i));
             this.drawToggle(x, rowY, state, i);
+            this.drawSmartToggle(x, rowY, state, i);
         }
         for (final Slot slot : this.inventorySlots.inventorySlots) {
             drawRect(x + slot.xPos, y + slot.yPos, x + slot.xPos + 16, y + slot.yPos + 16, 0xffb9c8c2);
@@ -445,6 +454,16 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
                 on ? 0xffc8f2e2 : 0xffe3ebe5);
     }
 
+    /** 每行第二个开关：本条的材料不够整批时减量下单。与左边启用开关同款画法。 */
+    private void drawSmartToggle(final int x, final int rowY, final StockMaintainerNetwork.State state, final int i) {
+        if (state == null || !state.configured[i]) { return; }
+        final boolean on = state.smartPartBatches[i];
+        drawRect(x + SMART_TOGGLE_X, rowY + 4, x + SMART_TOGGLE_X + 16, rowY + 13,
+                on ? 0xff3f7f9c : 0xff9aaca5);
+        drawRect(x + SMART_TOGGLE_X + (on ? 8 : 1), rowY + 5, x + SMART_TOGGLE_X + (on ? 15 : 8), rowY + 12,
+                on ? 0xffa8d8ef : 0xffe3ebe5);
+    }
+
     @Override
     public void drawFG(final int x, final int y, final int mouseX, final int mouseY) {
         this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(tr("title"), 200), 11, 9, 0xf1f5ef);
@@ -454,7 +473,7 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
                     : state.status == TileStockMaintainer.STATUS_NO_CHANNEL ? tr("no_channel") : tr("no_power");
             this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(label, 43), 288, 9, 0xf1f5ef);
         }
-        this.fontRenderer.drawString((this.container.page + 1) + " / " + PAGES, 276, 181, 0x324b4d);
+        this.fontRenderer.drawString((this.container.page + 1) + " / " + PAGES, 296, 181, 0x324b4d);
         if (state != null) {
             for (int i = 0; i < ROWS; i++) { this.drawRowText(state, i); }
         }
@@ -486,7 +505,13 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
                 state.countsValid[i] ? 0x2d6260 : 0x7c918c);
         // 状态格让位给「确定」按钮时，状态文字不画（按钮点击后状态自然回来）。
         if (this.dirty(i)) { return; }
-        this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(this.stateLabel(state.statuses[i]), 60),
+        // 减量下的单要看得见实下多少；整批就照旧只写「合成中」，不添噪声。
+        final boolean partial = MaintainerStatus.holdsOrder(state.statuses[i])
+                && state.orderBatches[i] > 0 && state.orderBatches[i] < state.batches[i];
+        final String stateText = partial
+                ? this.stateLabel(state.statuses[i]) + " " + MaintainerAmount.compact(state.orderBatches[i])
+                : this.stateLabel(state.statuses[i]);
+        this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(stateText, 60),
                 STATE_X, rowY, this.warning(state.statuses[i]) ? 0xad3e3b : 0x2d6260);
     }
 
@@ -512,6 +537,7 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
             case MaintainerStatus.SUBMIT_FAILED: return tr("state.submit_failed");
             case MaintainerStatus.ORDER_UNKNOWN: return tr("state.order_unknown");
             case MaintainerStatus.NO_DISCRETIZER: return tr("state.no_discretizer");
+            case MaintainerStatus.PARTIAL: return tr("state.partial");
             default: return "";
         }
     }
@@ -547,6 +573,12 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
             if (this.isPointInRegion(TOGGLE_X, rowY + 4, 16, 9, mouseX, mouseY)) {
                 this.drawHoveringText(tr(state.enabled[i] ? "toggle_off" : "toggle_on"), mouseX, mouseY);
             }
+            // 智能下单开关：除了说明当前状态，还要讲清开它会有什么后果。
+            if (this.isPointInRegion(SMART_TOGGLE_X, rowY + 4, 16, 9, mouseX, mouseY)) {
+                this.drawHoveringText(java.util.Arrays.asList(
+                        tr(state.smartPartBatches[i] ? "smart_off" : "smart_on"), tr("smart_risk")),
+                        mouseX, mouseY);
+            }
         }
         for (int i = 0; i < ROWS; i++) {
             if (this.isPointInRegion(MODE_X, TOP + i * ROW_H + 4, MODE_W, 9, mouseX, mouseY)) {
@@ -564,6 +596,7 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
             case MaintainerStatus.INCOMPLETE: return tr("hint.incomplete");
             case MaintainerStatus.SUBMIT_FAILED: return tr("hint.submit_failed");
             case MaintainerStatus.CRAFTING: return tr("hint.crafting");
+            case MaintainerStatus.PARTIAL: return tr("hint.partial");
             default: return this.stateLabel(status);
         }
     }

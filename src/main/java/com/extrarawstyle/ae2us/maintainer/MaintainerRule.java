@@ -1,7 +1,7 @@
 package com.extrarawstyle.ae2us.maintainer;
 
 /**
- * ME库存维持器的单条规则：目标、阈值、固定批量、启用开关与当前订单关联线索。
+ * ME库存维持器的单条规则：目标、阈值、固定批量、两个开关与当前订单关联线索。
  * 只保存可序列化的数据；运行期的 Future、watcher 不放在这里。
  */
 public final class MaintainerRule {
@@ -14,6 +14,8 @@ public final class MaintainerRule {
     public long threshold;
     public long batch;
     public boolean enabled;
+    /** 材料不够整批时，按能做出来的量下单。逐条独立，与其他行无关。 */
+    public boolean smartPartBatch;
 
     /** 当前关联订单的 craftID；null 表示没有关联。 */
     public String craftId;

@@ -89,6 +89,8 @@ public final class MaintainerBook {
         if (same) { return true; }
         rule.target = target.copy().setStackSize(1).setCraftable(false).setCountRequestable(0);
         rule.mode = mode;
+        // 新标记的行默认开启智能下单；清空后再标记按新行处理，数值留空。
+        rule.smartPartBatch = true;
         // 换目标：旧订单继续在 CPU 上跑，本条目只解除关联，不调用 cancel。
         rule.clearOrder();
         rule.observed = 0;
@@ -110,6 +112,14 @@ public final class MaintainerBook {
         final MaintainerRule rule = this.rules[index];
         if (value <= 0 || rule.batch == value) { return; }
         rule.batch = value;
+        this.bumpConfig();
+    }
+
+    /** 逐条开关：材料不够整批时按能做出来的量下单。 */
+    public void setSmartPartBatch(final int index, final boolean value) {
+        final MaintainerRule rule = this.rules[index];
+        if (rule.smartPartBatch == value) { return; }
+        rule.smartPartBatch = value;
         this.bumpConfig();
     }
 

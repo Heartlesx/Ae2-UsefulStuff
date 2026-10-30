@@ -24,7 +24,7 @@ import java.io.IOException;
  */
 public final class StockMaintainerNetwork {
     public static final int SET_TARGET_ITEM = 0, CLEAR = 1, SET_THRESHOLD = 2, SET_BATCH = 3,
-            SET_ENABLED = 4, PAGE = 5, SET_TARGET_FLUID = 6;
+            SET_ENABLED = 4, PAGE = 5, SET_TARGET_FLUID = 6, SET_SMART_PART_BATCH = 7;
 
     /**
      * 动作包里 {@code text} 字段的长度上限。写入与读取必须用同一个值：
@@ -149,6 +149,10 @@ public final class StockMaintainerNetwork {
                 case SET_ENABLED:
                     tile.configureEnabled(message.index, !message.text.isEmpty() && message.text.charAt(0) == '1');
                     break;
+                case SET_SMART_PART_BATCH:
+                    tile.configureSmartPartBatch(message.index,
+                            !message.text.isEmpty() && message.text.charAt(0) == '1');
+                    break;
                 case PAGE:
                     container.page = Math.max(0, Math.min(message.index, MaintainerBook.PAGES - 1));
                     container.refresh();
@@ -180,9 +184,13 @@ public final class StockMaintainerNetwork {
         public final long[] thresholds = new long[MaintainerBook.ROWS_PER_PAGE];
         public final long[] batches = new long[MaintainerBook.ROWS_PER_PAGE];
         public final long[] counts = new long[MaintainerBook.ROWS_PER_PAGE];
+        /** 当前这单实际下了多少：减量下单时比批量小，界面直接显示它。 */
+        public final long[] orderBatches = new long[MaintainerBook.ROWS_PER_PAGE];
         public final boolean[] configured = new boolean[MaintainerBook.ROWS_PER_PAGE];
         public final boolean[] countsValid = new boolean[MaintainerBook.ROWS_PER_PAGE];
         public final boolean[] enabled = new boolean[MaintainerBook.ROWS_PER_PAGE];
+        /** 逐条：材料不够整批时按能做出来的量下单。 */
+        public final boolean[] smartPartBatches = new boolean[MaintainerBook.ROWS_PER_PAGE];
         public final boolean[] hasOrder = new boolean[MaintainerBook.ROWS_PER_PAGE];
         public final String[] labels = new String[MaintainerBook.ROWS_PER_PAGE];
         public final ItemStack[] icons = new ItemStack[MaintainerBook.ROWS_PER_PAGE];
@@ -214,7 +222,9 @@ public final class StockMaintainerNetwork {
                 this.counts[i] = rule.observed;
                 this.countsValid[i] = rule.observedValid;
                 this.enabled[i] = rule.enabled;
+                this.smartPartBatches[i] = rule.smartPartBatch;
                 this.hasOrder[i] = rule.craftId != null;
+                this.orderBatches[i] = rule.craftId == null ? 0L : rule.orderBatch;
                 if (rule.target == null) { continue; }
                 if (rule.mode == MaintainerRule.MODE_FLUID) {
                     final ItemStack display = FluidMaintainerBridge.displayStack(rule.target);
@@ -244,11 +254,13 @@ public final class StockMaintainerNetwork {
                 this.modes[i] = packet.readUnsignedByte();
                 this.statuses[i] = packet.readUnsignedByte();
                 this.enabled[i] = packet.readBoolean();
+                this.smartPartBatches[i] = packet.readBoolean();
                 this.countsValid[i] = packet.readBoolean();
                 this.hasOrder[i] = packet.readBoolean();
                 this.thresholds[i] = packet.readLong();
                 this.batches[i] = packet.readLong();
                 this.counts[i] = packet.readLong();
+                this.orderBatches[i] = packet.readLong();
                 this.labels[i] = packet.readString(LABEL_MAX);
                 this.targets[i] = packet.readString(ACTION_TEXT_MAX);
                 try {
@@ -271,11 +283,13 @@ public final class StockMaintainerNetwork {
                 packet.writeByte(this.modes[i]);
                 packet.writeByte(this.statuses[i]);
                 packet.writeBoolean(this.enabled[i]);
+                packet.writeBoolean(this.smartPartBatches[i]);
                 packet.writeBoolean(this.countsValid[i]);
                 packet.writeBoolean(this.hasOrder[i]);
                 packet.writeLong(this.thresholds[i]);
                 packet.writeLong(this.batches[i]);
                 packet.writeLong(this.counts[i]);
+                packet.writeLong(this.orderBatches[i]);
                 packet.writeString(clip(this.labels[i], LABEL_MAX));
                 packet.writeString(this.targets[i] == null ? "" : this.targets[i]);
                 packet.writeItemStack(this.icons[i] == null ? ItemStack.EMPTY : this.icons[i]);

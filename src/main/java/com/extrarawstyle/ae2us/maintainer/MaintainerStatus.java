@@ -28,6 +28,8 @@ public final class MaintainerStatus {
     public static final int ORDER_UNKNOWN = 11;
     /** 流体条目缺少可用的 AE2FC 流体离散器。 */
     public static final int NO_DISCRETIZER = 12;
+    /** 材料不够整批，按能做出来的量下了这一单。 */
+    public static final int PARTIAL = 13;
 
     public static final int IDLE = EMPTY;
 
@@ -35,7 +37,7 @@ public final class MaintainerStatus {
 
     /** 该状态是否代表本条当前占着一笔已提交的订单。 */
     public static boolean holdsOrder(final int status) {
-        return status == CRAFTING || status == ORDER_UNKNOWN;
+        return status == CRAFTING || status == PARTIAL || status == ORDER_UNKNOWN;
     }
 
     /**
@@ -62,6 +64,7 @@ public final class MaintainerStatus {
             case SUBMIT_FAILED: return "submit_failed";
             case ORDER_UNKNOWN: return "order_unknown";
             case NO_DISCRETIZER: return "no_discretizer";
+            case PARTIAL: return "partial";
             default: return "";
         }
     }

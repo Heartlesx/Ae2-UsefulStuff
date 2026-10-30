@@ -29,6 +29,7 @@ public final class MaintainerNbt {
             tag.setLong("threshold", rule.threshold);
             tag.setLong("batch", rule.batch);
             tag.setBoolean("enabled", rule.enabled);
+            tag.setBoolean("smartPartBatch", rule.smartPartBatch);
             final NBTTagCompound target = new NBTTagCompound();
             if (rule.mode == MaintainerRule.MODE_FLUID) {
                 if (!FluidMaintainerBridge.writeTarget(rule.target, target)) { continue; }
@@ -57,6 +58,9 @@ public final class MaintainerNbt {
     public static void load(final MaintainerBook book, final NBTTagCompound root) {
         clear(book);
         if (root == null) { return; }
+        // 迁移：上一版是方块级开关，存在根节点上。老存档把它下发到每条已有规则，
+        // 保持玩家看到的行为不变；新标记的行另有默认值。
+        final boolean legacyGlobal = root.getBoolean("smartPartBatch");
         final NBTTagList list = root.getTagList("list", 10);
         for (int i = 0; i < list.tagCount(); i++) {
             final NBTTagCompound tag = list.getCompoundTagAt(i);
@@ -72,6 +76,9 @@ public final class MaintainerNbt {
             rule.threshold = Math.max(0L, tag.getLong("threshold"));
             rule.batch = Math.max(0L, tag.getLong("batch"));
             rule.enabled = tag.getBoolean("enabled");
+            // 有 per-row 键就按它；没有就是老存档，继承当时的方块级开关。
+            rule.smartPartBatch = tag.hasKey("smartPartBatch")
+                    ? tag.getBoolean("smartPartBatch") : legacyGlobal;
             rule.clearOrder();
             final String craftId = tag.getString("craftId");
             if (!craftId.isEmpty()) {

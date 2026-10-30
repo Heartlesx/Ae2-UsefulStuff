@@ -42,6 +42,8 @@ public final class StockMaintainerSelfCheck {
         targetChangeChecks();
         queueFairnessChecks();
         planExpiryChecks();
+        estimateChecks();
+        smartPartBatchChecks();
         orderLookupChecks();
         nbtChecks();
         statusChecks();
@@ -49,7 +51,8 @@ public final class StockMaintainerSelfCheck {
         modelChecks();
         isolationChecks();
         System.out.println("Stock maintainer checks passed (amounts, thresholds, capacity, duplicates, "
-                + "target changes, queue fairness, plan expiry, NBT, statuses, packets, models, optional AE2FC isolation)");
+                + "target changes, queue fairness, plan expiry, batch downscaling, NBT, statuses, packets, "
+                + "models, optional AE2FC isolation)");
     }
 
     // ---------------------------------------------------------------- 数量文本
@@ -311,6 +314,169 @@ public final class StockMaintainerSelfCheck {
         check(queue.pick(book, 0) == 2, "the cursor keeps advancing past a row that holds a plan");
     }
 
+    // ---------------------------------------------------------------- 缺料降量
+
+    /**
+     * 降量只能靠「算成功」的计划反推成本。
+     *
+     * 前提事实（对着 AE2UEL 源码核过）：{@code CraftingJob} 只在请求来自玩家时才在失败后重算并填计划，
+     * 机器发起的请求算失败后计划是空的。所以成本来自「探 1 个」那次成功的计划。
+     * 另外 AE 算单前会把目标自身库存清零（{@code craftingInventory.ignore(output)}），
+     * 每次都从头做满请求量，不存在「先吃掉现货只补差额」。
+     */
+    private static void estimateChecks() {
+        // 基准：做 1 个要 10 料，库存 1000 → 能做 100 个。
+        check(com.extrarawstyle.ae2us.maintainer.MaintainerEstimate.maxCraftable(
+                        new long[]{10L}, new long[]{1000L}, 599L) == 100L,
+                "unit cost divided into stock gives the achievable amount");
+
+        // 多种原料取最紧的那一项。
+        check(com.extrarawstyle.ae2us.maintainer.MaintainerEstimate.maxCraftable(
+                        new long[]{10L, 1L}, new long[]{1000L, 50L}, 599L) == 50L,
+                "the tightest input decides, not the loosest");
+
+        // 成本为 0 的原料不构成限制。
+        check(com.extrarawstyle.ae2us.maintainer.MaintainerEstimate.maxCraftable(
+                        new long[]{0L, 1L}, new long[]{0L, 50L}, 599L) == 50L,
+                "zero-cost inputs are ignored");
+
+        // 一旦有一样原料一个都没有，结果就是 0。
+        check(com.extrarawstyle.ae2us.maintainer.MaintainerEstimate.maxCraftable(
+                        new long[]{10L, 1L}, new long[]{1000L, 0L}, 599L) == 0L,
+                "a missing input means nothing can be made");
+
+        // 上限不能超过「整批减一」：整批已经算失败过。
+        check(com.extrarawstyle.ae2us.maintainer.MaintainerEstimate.maxCraftable(
+                        new long[]{1L}, new long[]{100000L}, 599L) == 599L,
+                "the cap keeps the result below the full batch");
+
+        // 库存不足以做满一个：0，别提交空单。
+        check(com.extrarawstyle.ae2us.maintainer.MaintainerEstimate.maxCraftable(
+                        new long[]{10L}, new long[]{9L}, 599L) == 0L,
+                "materials short of even one unit yield zero");
+
+        // 空成本清单：无从判断，保守返回 0。
+        check(com.extrarawstyle.ae2us.maintainer.MaintainerEstimate.maxCraftable(
+                        new long[0], new long[0], 599L) == 0L,
+                "an empty cost list yields zero");
+
+        // 减半的退路：必须真的变小，且能收敛到 0。
+        check(com.extrarawstyle.ae2us.maintainer.MaintainerEstimate.halve(100L) == 50L, "halving reduces");
+        check(com.extrarawstyle.ae2us.maintainer.MaintainerEstimate.halve(3L) == 1L, "halving rounds down to one");
+        check(com.extrarawstyle.ae2us.maintainer.MaintainerEstimate.halve(1L) == 0L, "halving one stops");
+
+        // 试探次数必须有限，否则缺料条目会一直占着后台线程。
+        check(com.extrarawstyle.ae2us.maintainer.MaintainerEstimate.MAX_ATTEMPTS == 4,
+                "downscaling is capped at four calculations");
+
+        // 源码级锁：成本必须来自「探 1 个成功后」的计划，不能靠失败任务的计划。
+        // 失败任务的计划在机器请求下是空的（CraftingJob 用 actionSrc.player() 判过），
+        // 若改回那种写法，这里会红。
+        final String tile = source("com/extrarawstyle/ae2us/maintainer/TileStockMaintainer.java");
+        // 只查方法定义会被"定义还在、调用被删"骗过去，所以查调用点。
+        check(tile.contains("this.handleProbeSuccess(index, rule, job, attempt, now);"),
+                "a successful probe must feed the cost estimate");
+        check(tile.contains("this.craftableWith(job, rule)"),
+                "the achievable amount is derived from a successful plan");
+        check(!tile.contains("estimateNextAmount"),
+                "the old estimate-from-failed-plan path must stay gone");
+        // 空单拦截必须真的被调用，光有方法定义不算——提交空单正是面板一闪就退的根因。
+        check(tile.contains("if (!this.craftsAnything(plan.job))"),
+                "the empty-plan guard must actually be called before submitting");
+    }
+
+    /** 读主源码树里的文件（自检要核对的是实现，不是产物）。 */
+    private static String source(final String relativePath) {
+        final java.io.File file = new java.io.File("src/main/java", relativePath);
+        if (!file.isFile()) { throw new AssertionError("source not found: " + relativePath); }
+        try {
+            return new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+        } catch (final java.io.IOException error) {
+            throw new AssertionError("cannot read source: " + relativePath, error);
+        }
+    }
+
+    /**
+     * 逐条开关：新标记的行默认开启，老存档（方块级开关时代）按当时的全局值迁移下来。
+     */
+    private static void smartPartBatchChecks() {
+        final MaintainerBook book = new MaintainerBook();
+        final MaintainerRule fresh = book.rule(0);
+        check(!fresh.smartPartBatch, "an empty row has smart batch off until it is marked");
+
+        book.setTarget(0, AEItemStack.fromItemStack(new ItemStack(Items.IRON_INGOT)), MaintainerRule.MODE_ITEM);
+        book.setThreshold(0, 500);
+        book.setBatch(0, 100);
+        check(book.rule(0).smartPartBatch, "a newly marked row turns smart batch on by default");
+
+        // 逐条独立：动一条不影响另一条。
+        book.setTarget(1, AEItemStack.fromItemStack(new ItemStack(Items.GOLD_INGOT)), MaintainerRule.MODE_ITEM);
+        book.setThreshold(1, 500);
+        book.setBatch(1, 100);
+        check(book.rule(1).smartPartBatch, "a second marked row is on as well");
+        book.setSmartPartBatch(0, false);
+        check(!book.rule(0).smartPartBatch, "turning one row off works");
+        check(book.rule(1).smartPartBatch, "turning one row off leaves the other row alone");
+
+        final long before = book.configRevision();
+        book.setSmartPartBatch(0, false);
+        check(book.configRevision() == before, "setting the same value does not churn the config revision");
+        book.setSmartPartBatch(0, true);
+        check(book.configRevision() != before, "toggling invalidates pending plans");
+
+        // 清空后重建按新行处理：默认开启。
+        book.setTarget(0, null, MaintainerRule.MODE_ITEM);
+        book.setTarget(0, AEItemStack.fromItemStack(new ItemStack(Items.DIAMOND)), MaintainerRule.MODE_ITEM);
+        check(book.rule(0).smartPartBatch, "re-marking after a clear behaves like a new row");
+
+        // 逐条存盘往返。
+        final MaintainerBook saved = new MaintainerBook();
+        saved.setTarget(0, AEItemStack.fromItemStack(new ItemStack(Items.IRON_INGOT)), MaintainerRule.MODE_ITEM);
+        saved.setThreshold(0, 500);
+        saved.setBatch(0, 100);
+        saved.setTarget(1, AEItemStack.fromItemStack(new ItemStack(Items.GOLD_INGOT)), MaintainerRule.MODE_ITEM);
+        saved.setThreshold(1, 500);
+        saved.setBatch(1, 100);
+        saved.setSmartPartBatch(1, false);
+        final MaintainerBook restored = roundTrip(saved);
+        check(restored.rule(0).smartPartBatch, "the per-row switch survives NBT roundtrip (on)");
+        check(!restored.rule(1).smartPartBatch, "the per-row switch survives NBT roundtrip (off)");
+
+        // 迁移：上一版把开关存在根节点上。老存档里没有 per-row 键时，继承那个全局值。
+        final MaintainerBook legacyBook = new MaintainerBook();
+        legacyBook.setTarget(0, AEItemStack.fromItemStack(new ItemStack(Items.IRON_INGOT)), MaintainerRule.MODE_ITEM);
+        legacyBook.setThreshold(0, 500);
+        legacyBook.setBatch(0, 100);
+        final NBTTagCompound legacy = MaintainerNbt.save(legacyBook);
+        // 抹掉 per-row 键，改回旧格式的根节点开关。
+        legacy.getTagList("list", 10).getCompoundTagAt(0).removeTag("smartPartBatch");
+        legacy.setBoolean("smartPartBatch", true);
+        final MaintainerBook migrated = new MaintainerBook();
+        MaintainerNbt.load(migrated, legacy);
+        check(migrated.rule(0).smartPartBatch, "a legacy global switch migrates down to the row");
+
+        legacy.setBoolean("smartPartBatch", false);
+        final MaintainerBook migratedOff = new MaintainerBook();
+        MaintainerNbt.load(migratedOff, legacy);
+        check(!migratedOff.rule(0).smartPartBatch, "a legacy global switch that was off migrates as off");
+
+        // 减量下单的状态既是"占着订单"，又要在面板上和整批区分开。
+        check(MaintainerStatus.holdsOrder(MaintainerStatus.PARTIAL), "a partial order still holds the slot");
+        check(MaintainerStatus.PARTIAL != MaintainerStatus.CRAFTING, "partial is its own status");
+        check("partial".equals(MaintainerStatus.key(MaintainerStatus.PARTIAL)), "partial has a language key");
+        check(!MaintainerStatus.isAttemptResult(MaintainerStatus.PARTIAL),
+                "partial is a live order, not a concluded attempt");
+
+        // 界面侧：开关必须真的是每行一个，不能退回那个全局开关。
+        final String gui = source("com/extrarawstyle/ae2us/client/GuiStockMaintainer.java");
+        check(gui.contains("SMART_TOGGLE_X"), "the per-row smart toggle column exists");
+        check(gui.contains("state.smartPartBatches[i]"), "the toggle reads the per-row flag, not a global one");
+        check(!gui.contains("SMART_X, SMART_Y"), "the old header-level global switch must stay gone");
+        // 悬停必须交代风险，这是用户明确要求的。
+        check(gui.contains("smart_risk"), "hovering the toggle must warn about the risk");
+        check(gui.contains("SET_SMART_PART_BATCH, index"), "the toggle sends the clicked row, not a fixed one");
+    }
+
     // ---------------------------------------------------------------- 订单核对
 
     /**
@@ -540,7 +706,9 @@ public final class StockMaintainerSelfCheck {
             state.counts[i] = 2000L + i;
             state.countsValid[i] = i != 5;
             state.enabled[i] = i % 2 == 0;
+            state.smartPartBatches[i] = i % 3 == 0;
             state.hasOrder[i] = i == 2;
+            state.orderBatches[i] = i == 2 ? 37L : 0L;
             state.labels[i] = "row-" + i;
             state.targets[i] = i == 2 ? "{Fluid:\"water\"}" : "";
             state.icons[i] = i == 0 ? new ItemStack(Items.IRON_INGOT) : ItemStack.EMPTY;
@@ -558,6 +726,10 @@ public final class StockMaintainerSelfCheck {
         check(!decoded.countsValid[5], "invalid counts are distinguishable from zero");
         check(decoded.modes[2] == MaintainerRule.MODE_FLUID, "row mode roundtrip");
         check(decoded.hasOrder[2] && !decoded.hasOrder[3], "order flag roundtrip");
+        check(decoded.smartPartBatches[0] && !decoded.smartPartBatches[1],
+                "the per-row smart batch flags roundtrip independently");
+        check(decoded.orderBatches[2] == 37L, "the actually ordered amount roundtrips");
+        check(decoded.orderBatches[3] == 0L, "rows without an order report a zero ordered amount");
         check("row-7".equals(decoded.labels[7]), "label roundtrip");
         check("{Fluid:\"water\"}".equals(decoded.targets[2]), "fluid target payload roundtrip");
         check(ItemStack.areItemStacksEqual(decoded.icons[0], state.icons[0]), "row icon roundtrip");

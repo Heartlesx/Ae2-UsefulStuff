@@ -30,8 +30,10 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraftforge.common.DimensionManager;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Future;
 
@@ -58,13 +60,33 @@ public class TileStockMaintainer extends AENetworkTile implements ITickable {
     private final MaintainerQueue queue = new MaintainerQueue();
     private final IActionSource source = new MachineSource(this);
     /** 每条最多一个尚在计算的 Future。 */
-    private final Map<Integer, Future<ICraftingJob>> pending = new HashMap<>();
+    private final Map<Integer, Attempt> pending = new HashMap<>();
     /** 已算好、等待可执行 CPU 的计划。 */
     private final Map<Integer, Plan> plans = new HashMap<>();
 
     private boolean active;
     private boolean visualInitialized;
     private int statusOrdinal = STATUS_NO_CHANNEL;
+
+    /**
+     * 一次正在算的请求。
+     *
+     * 智能下单的整个流程靠这个序号推进：
+     * 1 = 按整批算；缺料则 2 = 探 1 个（这一份计划给出"做一个的成本"）；
+     * 3 = 按算出来的上限验证；还算不出就 4 = 减半。
+     * 序号只增不减，所以不会在同一档上打转。
+     */
+    private static final class Attempt {
+        final Future<ICraftingJob> future;
+        final long amount;
+        final int attempt;
+
+        Attempt(final Future<ICraftingJob> future, final long amount, final int attempt) {
+            this.future = future;
+            this.amount = amount;
+            this.attempt = attempt;
+        }
+    }
 
     /** 已算好、等待空闲 CPU 的计划；configRevision 用于拒绝过期结果。 */
     private static final class Plan {
@@ -146,7 +168,7 @@ public class TileStockMaintainer extends AENetworkTile implements ITickable {
 
     /** 断网/断电：放弃未提交的本地工作，已提交的订单留给 CPU。 */
     private void abandonRuntimeWork() {
-        for (final Future<ICraftingJob> future : this.pending.values()) { future.cancel(false); }
+        for (final Attempt attempt : this.pending.values()) { attempt.future.cancel(false); }
         this.pending.clear();
         this.plans.clear();
         for (final MaintainerRule rule : this.book.rules()) {
@@ -228,7 +250,9 @@ public class TileStockMaintainer extends AENetworkTile implements ITickable {
             final OrderLookup lookup = this.lookupOrder(rule);
             switch (lookup.state) {
                 case OrderLookup.RUNNING:
-                    this.setStatus(i, MaintainerStatus.CRAFTING);
+                    // 减量下的单要一直标着"部分下单"，别在核对时被刷回普通"合成中"。
+                    this.setStatus(i, rule.status == MaintainerStatus.PARTIAL
+                            ? MaintainerStatus.PARTIAL : MaintainerStatus.CRAFTING);
                     break;
                 case OrderLookup.FINISHED:
                     rule.clearOrder();
@@ -367,14 +391,20 @@ public class TileStockMaintainer extends AENetworkTile implements ITickable {
     }
 
     private void beginCalculation(final int index, final MaintainerRule rule, final long now) {
-        final IAEItemStack request = this.requestStack(rule);
+        rule.status = MaintainerStatus.CALCULATING;
+        this.book.bump();
+        this.beginAttempt(index, rule, rule.batch, 1, now);
+    }
+
+    /** 按指定产量发起一次计算；amt 就是本次请求的产物数量。 */
+    private void beginAttempt(final int index, final MaintainerRule rule, final long amt, final int attempt,
+                              final long now) {
+        final IAEItemStack request = this.requestStack(rule, amt);
         if (request == null) {
             rule.status = MaintainerStatus.INCOMPLETE;
             this.book.bump();
             return;
         }
-        rule.status = MaintainerStatus.CALCULATING;
-        this.book.bump();
         try {
             final ICraftingGrid crafting = this.getProxy().getCrafting();
             final Future<ICraftingJob> future = crafting.beginCraftingJob(this.world,
@@ -383,20 +413,20 @@ public class TileStockMaintainer extends AENetworkTile implements ITickable {
                 this.fail(index, rule, now);
                 return;
             }
-            this.pending.put(index, future);
+            this.pending.put(index, new Attempt(future, amt, attempt));
         } catch (final GridAccessException offline) {
             rule.status = MaintainerStatus.OFFLINE;
             this.book.bump();
         }
     }
 
-    /** 计算请求：物品为 目标×批量；流体为 AE2FC 虚拟 drop，1 drop = 1 mB。 */
-    private IAEItemStack requestStack(final MaintainerRule rule) {
+    /** 计算请求：物品为 指定产量；流体为 AE2FC 虚拟 drop，1 drop = 1 mB。 */
+    private IAEItemStack requestStack(final MaintainerRule rule, final long amt) {
         if (rule.mode == MaintainerRule.MODE_FLUID) {
-            return FluidMaintainerBridge.request(rule.target, rule.batch);
+            return FluidMaintainerBridge.request(rule.target, amt);
         }
         final IAEItemStack stack = ((IAEItemStack) rule.target).copy();
-        stack.setStackSize(rule.batch);
+        stack.setStackSize(amt);
         stack.setCraftable(false);
         stack.setCountRequestable(0);
         return stack;
@@ -404,35 +434,155 @@ public class TileStockMaintainer extends AENetworkTile implements ITickable {
 
     private void collectFutures(final long now) {
         if (this.pending.isEmpty()) { return; }
-        final Iterator<Map.Entry<Integer, Future<ICraftingJob>>> it = this.pending.entrySet().iterator();
+        final Iterator<Map.Entry<Integer, Attempt>> it = this.pending.entrySet().iterator();
         while (it.hasNext()) {
-            final Map.Entry<Integer, Future<ICraftingJob>> entry = it.next();
-            final Future<ICraftingJob> future = entry.getValue();
-            if (!future.isDone()) { continue; }
+            final Map.Entry<Integer, Attempt> entry = it.next();
+            final Attempt attempt = entry.getValue();
+            if (!attempt.future.isDone()) { continue; }
             it.remove();
             final int index = entry.getKey();
             final MaintainerRule rule = this.book.rule(index);
             if (rule == null || rule.target == null) { continue; }
             ICraftingJob job = null;
             try {
-                job = future.get();
+                job = attempt.future.get();
             } catch (final InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             } catch (final Exception failed) {
                 // CancellationException / ExecutionException：都按“计划没算出来”处理。
                 job = null;
             }
-            if (job == null || job.isSimulation()) {
-                // 缺材料、无样板或计算失败：让出队列，冷却后再算，不长期占着槽位。
-                rule.status = MaintainerStatus.NO_PATTERN;
-                this.queue.coolDown(index, now, MaintainerQueue.RETRY_NO_PATTERN);
-                this.book.bump();
+            if (job == null) {
+                this.giveUp(index, rule, now);
                 continue;
             }
-            final Plan plan = new Plan(job, now, this.book.configRevision(), rule.batch);
+            if (job.isSimulation()) {
+                this.handleShortage(index, rule, attempt, now);
+                continue;
+            }
+            // 探一个成功：这份计划给出每单位成本，先算出上限再验证，不直接提交。
+            // 批量本来就是 1 时没有可降的余地，按普通计划走。
+            if (attempt.attempt == 2 && attempt.amount == 1L) {
+                this.handleProbeSuccess(index, rule, job, attempt, now);
+                continue;
+            }
+            final Plan plan = new Plan(job, now, this.book.configRevision(), attempt.amount);
             this.plans.put(index, plan);
             this.submitJob(index, rule, plan, now);
         }
+    }
+
+    /**
+     * 材料不够整批。
+     *
+     * 算失败的任务里没有可用的原料清单：{@code CraftingJob} 只在请求来自玩家时才重算一遍并填计划，
+     * 机器发起的请求算失败后计划是空的。所以成本只能从「算成功了」的任务里拿——
+     * 先把请求量降到 1 探一次，那一次的计划正好是"做一个要用多少料"。
+     *
+     * 关着智能下单、或已经用完试探次数，就照旧报缺料。
+     */
+    private void handleShortage(final int index, final MaintainerRule rule, final Attempt attempt,
+                                final long now) {
+        if (!rule.smartPartBatch || attempt.attempt >= MaintainerEstimate.MAX_ATTEMPTS) {
+            this.giveUp(index, rule, now);
+            return;
+        }
+        // 探一个都做不出来：那样原料都没有，换别的量也没用。
+        if (attempt.amount <= 1L) {
+            this.giveUp(index, rule, now);
+            return;
+        }
+        // 第一步探一个；之后的失败（多半是离散取整或替代料）就减半重试。
+        final long next = attempt.attempt == 1 ? 1L : MaintainerEstimate.halve(attempt.amount);
+        if (next <= 0L) {
+            this.giveUp(index, rule, now);
+            return;
+        }
+        this.beginAttempt(index, rule, next, attempt.attempt + 1, now);
+    }
+
+    /** 探 1 个算成功了：拿这份计划的用量当每单位成本，算出上限再验证一次。 */
+    private void handleProbeSuccess(final int index, final MaintainerRule rule, final ICraftingJob job,
+                                    final Attempt attempt, final long now) {
+        final long cap = this.craftableWith(job, rule);
+        if (cap <= 0L) {
+            this.giveUp(index, rule, now);
+            return;
+        }
+        // 只做得出一两个：探出来的这份计划本身就是一笔合法订单，直接用，不再多算一次。
+        if (cap <= 1L) {
+            final Plan plan = new Plan(job, now, this.book.configRevision(), 1L);
+            this.plans.put(index, plan);
+            this.submitJob(index, rule, plan, now);
+            return;
+        }
+        // 上限已经到整批：按整批算失败过，再按整批算一次是一样的结果，别浪费。
+        if (cap >= rule.batch) {
+            this.giveUp(index, rule, now);
+            return;
+        }
+        this.beginAttempt(index, rule, cap, attempt.attempt + 1, now);
+    }
+
+    /**
+     * 从一份「算成功了」的计划里，算出现有库存能支持做多少个。
+     *
+     * 计划里的用量清单夹着作业内部现做现用的中间产物，那些不该当瓶颈：库存里没有的、
+     * 或者网络自己能合成的，一律不参与限制。剩下的才是真正卡产量的原料。
+     */
+    private long craftableWith(final ICraftingJob job, final MaintainerRule rule) {
+        final IItemList<IAEItemStack> plan = AEApi.instance().storage()
+                .getStorageChannel(IItemStorageChannel.class).createList();
+        job.populatePlan(plan);
+        final IItemList<IAEItemStack> stock;
+        final ICraftingGrid crafting;
+        try {
+            stock = this.getProxy().getStorage()
+                    .getInventory(AEApi.instance().storage().getStorageChannel(IItemStorageChannel.class))
+                    .getStorageList();
+            crafting = this.getProxy().getCrafting();
+        } catch (final GridAccessException offline) {
+            return 0L;
+        }
+        final List<Long> cost = new ArrayList<>();
+        final List<Long> have = new ArrayList<>();
+        for (final IAEItemStack entry : plan) {
+            if (entry.getStackSize() <= 0L) { continue; }
+            final IAEItemStack found = stock.findPrecise(entry);
+            final long stored = found == null ? 0L : found.getStackSize();
+            if (stored <= 0L) { continue; }
+            if (!crafting.getCraftingFor(entry, null, -1, this.world).isEmpty()) { continue; }
+            cost.add(entry.getStackSize());
+            have.add(stored);
+        }
+        // 一项可判定的原料都没有：保守放弃，宁可报缺料也不乱下小单。
+        if (cost.isEmpty()) { return 0L; }
+        final long[] costs = new long[cost.size()];
+        final long[] storeds = new long[have.size()];
+        for (int i = 0; i < costs.length; i++) {
+            costs[i] = cost.get(i);
+            storeds[i] = have.get(i);
+        }
+        // 上限不超过「整批减一」：整批已经算失败过，不必再试原地。
+        return MaintainerEstimate.maxCraftable(costs, storeds, Math.max(0L, rule.batch - 1L));
+    }
+
+    /** 计划里有没有任何一个请求量大于 0 的合成步骤；没有就是空单，提交了只会立刻结束。 */
+    private boolean craftsAnything(final ICraftingJob job) {
+        final IItemList<IAEItemStack> plan = AEApi.instance().storage()
+                .getStorageChannel(IItemStorageChannel.class).createList();
+        job.populatePlan(plan);
+        for (final IAEItemStack entry : plan) {
+            if (entry.getCountRequestable() > 0L) { return true; }
+        }
+        return false;
+    }
+
+    /** 缺料/无样板：让出队列，冷却后再算，不长期占着槽位。 */
+    private void giveUp(final int index, final MaintainerRule rule, final long now) {
+        rule.status = MaintainerStatus.NO_PATTERN;
+        this.queue.coolDown(index, now, MaintainerQueue.RETRY_NO_PATTERN);
+        this.book.bump();
     }
 
     private void submitJob(final int index, final MaintainerRule rule, final Plan plan, final long now) {
@@ -442,6 +592,13 @@ public class TileStockMaintainer extends AENetworkTile implements ITickable {
             this.plans.remove(index);
             rule.status = rule.enabled ? MaintainerStatus.STOCKED : MaintainerStatus.DISABLED;
             this.book.bump();
+            return;
+        }
+        // 一个东西都不用做的任务提交上去也立刻结束：面板会闪一下"合成中"又退回缺料，
+        // 而且什么都没补上。这种计划直接当失败处理，别浪费一次 CPU。
+        if (!this.craftsAnything(plan.job)) {
+            this.plans.remove(index);
+            this.giveUp(index, rule, now);
             return;
         }
         final ICraftingLink link;
@@ -460,7 +617,8 @@ public class TileStockMaintainer extends AENetworkTile implements ITickable {
             rule.hasCpuPos = false;
             rule.cpuDim = this.world.provider.getDimension();
             rule.cpuPos = 0L;
-            rule.status = MaintainerStatus.CRAFTING;
+            // 减量下单要让人看得见：面板上写"部分下单 100"，跟正常整批区分开。
+            rule.status = plan.batch < rule.batch ? MaintainerStatus.PARTIAL : MaintainerStatus.CRAFTING;
             this.queue.clearCooldown(index);
             // 立刻定位一次 CPU，供日后网络里看不到时核对；失败也不影响订单。
             this.rememberCurrentCpu(rule);
@@ -625,6 +783,14 @@ public class TileStockMaintainer extends AENetworkTile implements ITickable {
         this.plans.remove(index);
         this.saveChanges();
         this.updateBlockState();
+    }
+
+    /** 逐条：材料不够整批时改下能做的量。切换后丢掉这条未提交的计划，下轮按新口径重算。 */
+    public void configureSmartPartBatch(final int index, final boolean value) {
+        if (index < 0 || index >= MaintainerBook.CAPACITY) { return; }
+        this.book.setSmartPartBatch(index, value);
+        this.plans.remove(index);
+        this.saveChanges();
     }
 
     /** 供 GUI 判定流体环境提示用。 */
