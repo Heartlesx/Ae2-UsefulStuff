@@ -5,6 +5,7 @@ ae2us.upload.button=上传编码样板
 ae2us.upload.title=选择上传接口
 ae2us.upload.empty=当前网络没有接口
 ae2us.upload.free=可用槽位：%s
+ae2us.upload.circuit=电路 %s
 ae2us.upload.success=样板上传成功
 ae2us.upload.duplicate=该接口组已有相同主产物的样板
 ae2us.upload.no_pattern=请先编码样板

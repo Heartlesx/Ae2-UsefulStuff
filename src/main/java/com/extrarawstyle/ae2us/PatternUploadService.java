@@ -3,7 +3,9 @@ package com.extrarawstyle.ae2us;
 import com.extrarawstyle.ae2us.mixin.PatternEncoderAccessor;
 
 import appeng.api.config.SecurityPermissions;
+import appeng.api.config.Settings;
 import appeng.api.config.Upgrades;
+import appeng.api.config.YesNo;
 import appeng.api.implementations.ICraftingPatternItem;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridHost;
@@ -21,6 +23,7 @@ import appeng.parts.AEBasePart;
 import appeng.parts.misc.PartInterface;
 import appeng.tile.misc.TileInterface;
 import appeng.tile.networking.TileCableBus;
+import gregtech.api.capability.IGhostSlotConfigurable;
 import gregtech.api.metatileentity.MetaTileEntity;
 import gregtech.api.metatileentity.MetaTileEntityHolder;
 import gregtech.api.metatileentity.interfaces.IGregTechTileEntity;
@@ -89,7 +92,7 @@ public final class PatternUploadService {
             final List<TargetInfo.MemberInfo> members = new ArrayList<>(group.members.size());
             for (final Target target : group.members) {
                 members.add(new TargetInfo.MemberInfo(target.dimension, target.pos, target.side,
-                        target.location(), target.freeSlots, customNamed(target.host)));
+                        target.location(), target.freeSlots, customNamed(target.host), target.circuit));
             }
             result.add(new TargetInfo(group.key, group.name, group.location,
                     group.members.size(), group.freeSlots, members));
@@ -239,6 +242,7 @@ public final class PatternUploadService {
         status(player, "ae2us.upload.unavailable");
     }
 
+    /** 自动上传只匹配完整名字；同名组内多台接口按现有顺序选择有空位的那台。 */
     public static boolean autoUpload(final EntityPlayerMP player) {
         if (!PatternUploadData.get(player).enabled(player.getUniqueID())) {
             return true;
@@ -568,7 +572,7 @@ public final class PatternUploadService {
                     continue;
                 }
                 final IInterfaceHost host = hostOf(node.getMachine());
-                if (host == null) {
+                if (host == null || hidden(host)) {
                     continue;
                 }
                 final TileEntity tile = host.getTileEntity();
@@ -614,6 +618,12 @@ public final class PatternUploadService {
         final String name = host.getClass().getName();
         return name.equals("com.glodblock.github.common.tile.TileDualInterface")
                 || name.equals("com.glodblock.github.common.part.PartDualInterface");
+    }
+
+    /** 玩家在接口 GUI 里关掉"接口终端"（{@link Settings#INTERFACE_TERMINAL}）就视为隐藏：
+     *  上传列表里不出现，可用槽位也不计入，自动上传同样跳过。 */
+    private static boolean hidden(final IInterfaceHost host) {
+        return host.getInterfaceDuality().getConfigManager().getSetting(Settings.INTERFACE_TERMINAL) == YesNo.NO;
     }
 
     private static int enabledSlots(final Target target) {
@@ -736,15 +746,23 @@ public final class PatternUploadService {
             public final String location;
             public final int freeSlots;
             public final boolean custom;
+            /** 这台宿主配的幽灵电路号；-1 表示没配。只用于显示，不参与自动匹配。 */
+            public final int circuit;
 
             public MemberInfo(final int dimension, final BlockPos pos, final int side,
                     final String location, final int freeSlots, final boolean custom) {
+                this(dimension, pos, side, location, freeSlots, custom, -1);
+            }
+
+            public MemberInfo(final int dimension, final BlockPos pos, final int side,
+                    final String location, final int freeSlots, final boolean custom, final int circuit) {
                 this.dimension = dimension;
                 this.pos = pos;
                 this.side = side;
                 this.location = location;
                 this.freeSlots = freeSlots;
                 this.custom = custom;
+                this.circuit = circuit;
             }
         }
     }
@@ -784,6 +802,8 @@ public final class PatternUploadService {
         private final int dimension;
         private final BlockPos pos;
         private final int side;
+        /** 这台宿主自己配的电路号；-1 表示没配（或不是 GT 的可配置机器）。 */
+        private final int circuit;
         private int freeSlots;
 
         private Target(final IInterfaceHost host, final TileEntity tile) {
@@ -792,11 +812,39 @@ public final class PatternUploadService {
             this.dimension = tile.getWorld().provider.getDimension();
             this.pos = tile.getPos();
             this.side = host instanceof AEBasePart ? ((AEBasePart) host).getSide().ordinal() : 6;
+            this.circuit = circuitOf(host);
         }
 
         private String location() {
             return dimension + ": " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ()
                     + (side == 6 ? "" : " / " + appeng.api.util.AEPartLocation.fromOrdinal(side).name());
+        }
+    }
+
+    /**
+     * 宿主自己配的幽灵电路号；读不到返回 -1（未配置）。
+     *
+     * GT 的样板输入总成用幽灵电路区分同一台机器的配方分支，玩家就是靠它（配合改名）分开接线。
+     * 这里读出来只用于在选择框里显示，<b>不参与自动匹配</b>——玩家的意图写在名字里，名字才是唯一依据。
+     *
+     * 读法：GT 没有给 IGhostSlotConfigurable 提供 getter，但总成的 writeToNBT 会把电路值写进
+     * 根节点的 GhostCircuit 键（未配置时不写这个键）。注意 GT 机器的 NBT 是嵌在方块实体的
+     * {@code MetaTileEntity} 子标签里的，读根节点永远读不到。所以取一份 NBT 快照后要往里找一层。
+     */
+    private static int circuitOf(final IInterfaceHost host) {
+        final TileEntity tile = host.getTileEntity();
+        if (!(tile instanceof MetaTileEntityHolder)) { return -1; }
+        final MetaTileEntity mte = ((MetaTileEntityHolder) tile).getMetaTileEntity();
+        if (!(mte instanceof IGhostSlotConfigurable)
+                || !((IGhostSlotConfigurable) mte).hasGhostCircuitInventory()) { return -1; }
+        try {
+            final NBTTagCompound tag = new NBTTagCompound();
+            tile.writeToNBT(tag);
+            final NBTTagCompound inner = tag.hasKey("MetaTileEntity", 10)
+                    ? tag.getCompoundTag("MetaTileEntity") : tag;
+            return inner.hasKey("GhostCircuit", 1) ? inner.getByte("GhostCircuit") : -1;
+        } catch (final RuntimeException unsupported) {
+            return -1;
         }
     }
 

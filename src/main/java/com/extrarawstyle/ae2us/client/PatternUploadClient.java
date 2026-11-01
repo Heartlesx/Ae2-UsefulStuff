@@ -444,7 +444,12 @@ public final class PatternUploadClient {
                     nameField.width = layout.width - 82;
                     nameField.drawTextBox();
                 } else {
-                    mc.fontRenderer.drawString(mc.fontRenderer.trimStringToWidth(member.location, layout.width - 88),
+                    // 配了幽灵电路的机器把电路号贴在坐标后面：同一种机器分好几台时，
+                    // 光看坐标分不清哪台是哪个配方分支，电路号才是玩家真正认的那个。
+                    final String where = member.circuit >= 0
+                            ? member.location + "  \u00b7  " + I18n.format("ae2us.upload.circuit", member.circuit)
+                            : member.location;
+                    mc.fontRenderer.drawString(mc.fontRenderer.trimStringToWidth(where, layout.width - 88),
                             layout.x + 12, rowY + 2, 0xFF192B30);
                     mc.fontRenderer.drawString(I18n.format("ae2us.upload.free", member.freeSlots),
                             layout.x + 12, rowY + 13, 0xFF4B5E62);

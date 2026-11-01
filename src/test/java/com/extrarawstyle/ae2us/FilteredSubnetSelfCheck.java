@@ -143,6 +143,7 @@ public final class FilteredSubnetSelfCheck {
         }
         check(DEPTH.get().isEmpty() && count(sharedNetwork.getAvailableItems(CHANNEL.createList()), "dust") == 5,
                 "exception cleanup preserves following scans and traversal depth");
+        SubnetNotificationsSelfCheck.verify();
         System.out.println("Filtered subnet checks passed (legacy repro, overlap, order, cycles, sources and access)");
     }
 
