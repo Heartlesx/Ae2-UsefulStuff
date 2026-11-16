@@ -52,6 +52,8 @@ dependencies {
     // 也要加载补丁类核对它的 @Mixin 目标，所以 HEI 必须同时出现在测试运行期类路径上。
     testImplementation files('libs/HadEnoughItems_1.12.2-4.32.0.jar')
     compileOnly files('libs/mousetweaks-1.12.2-3.1.5.jar')
+    // 库存维持器界面的翻页自检要真的构造 AEBaseGui 子类，而 AEBaseGui 实现了 mousetweaks 的接口。
+    testImplementation files('libs/mousetweaks-1.12.2-3.1.5.jar')
     // TheOneProbe 仅编译期使用（库存报警器 TOP 集成），运行时由整合包提供，不捆绑。
     compileOnly files('libs/theoneprobe-1.12-1.4.28.jar')
     compileOnly files('libs/gregtech-1.12.2-master-2901.jar')
@@ -217,6 +219,13 @@ task verifyLocateHighlight(type: JavaExec) {
 
 check.dependsOn verifyLocateHighlight
 
+task verifyPatternUploadLayout(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.client.PatternUploadLayoutSelfCheck'
+}
+
+check.dependsOn verifyPatternUploadLayout
+
 task verifyPatternPreview(type: JavaExec) {
     classpath = sourceSets.test.runtimeClasspath
     main = 'com.extrarawstyle.ae2us.PatternPreviewSelfCheck'
@@ -262,6 +271,14 @@ task verifyStockMaintainer(type: JavaExec) {
 }
 
 check.dependsOn verifyStockMaintainer
+
+// 库存维持器的翻页回归要真的构造 GUI 并驱动它的状态应用路径，所以单独一个任务。
+task verifyStockMaintainerPage(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    main = 'com.extrarawstyle.ae2us.client.StockMaintainerPageSelfCheck'
+}
+
+check.dependsOn verifyStockMaintainerPage
 
 task verifyMirrorProvider(type: JavaExec) {
     classpath = sourceSets.test.runtimeClasspath

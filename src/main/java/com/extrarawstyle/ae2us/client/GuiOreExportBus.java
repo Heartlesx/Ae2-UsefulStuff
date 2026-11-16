@@ -58,17 +58,99 @@ public final class GuiOreExportBus extends AEBaseGui implements IJEIGhostIngredi
 
     private static String tr(final String key, final Object... args) { return I18n.format("ae2us.orebus." + key, args); }
 
+    // 像素容器视觉，取值与样板上传界面（PatternUploadClient）保持一致。
+    private static final int COL_OUTLINE = 0xFF1B1B1B;
+    private static final int COL_FACE = 0xFFC6C6C6;
+    private static final int COL_HIGHLIGHT = 0xFFFFFFFF;
+    private static final int COL_SHADOW = 0xFF555555;
+    private static final int COL_SUNKEN = 0xFF8B8B8B;
+    private static final int COL_SUNKEN_EDGE = 0xFF373737;
+    private static final int COL_ROW_HOVER = 0xFFD9E4E6;
+    private static final int COL_ROW_SELECTED = 0xFFFFFFFF;
+    private static final int COL_INPUT = 0xFFFFFFFF;
+    private static final int COL_INPUT_IDLE = 0xFFE4E4E4;
+    private static final int COL_TEXT = 0xFF202020;
+    private static final int COL_TEXT_DIM = 0xFF4A4A4A;
+    private static final int COL_ERROR = 0xFF9C2020;
+
+    /** 面板：黑描边 + 灰底 + 左上高光 / 右下阴影，全部一像素硬边。 */
+    private void panel(final int x, final int y, final int width, final int height) {
+        drawRect(x, y, x + width, y + height, COL_OUTLINE);
+        drawRect(x + 1, y + 1, x + width - 1, y + height - 1, COL_FACE);
+        drawRect(x + 1, y + 1, x + width - 1, y + 2, COL_HIGHLIGHT);
+        drawRect(x + 1, y + 1, x + 2, y + height - 1, COL_HIGHLIGHT);
+        drawRect(x + 1, y + height - 2, x + width - 1, y + height - 1, COL_SHADOW);
+        drawRect(x + width - 2, y + 1, x + width - 1, y + height - 1, COL_SHADOW);
+    }
+
+    /** 凹槽：左上压暗、右下提亮。 */
+    private void inset(final int x, final int y, final int width, final int height, final int fill) {
+        drawRect(x, y, x + width, y + height, fill);
+        drawRect(x, y, x + width, y + 1, COL_SUNKEN_EDGE);
+        drawRect(x, y, x + 1, y + height, COL_SUNKEN_EDGE);
+        drawRect(x + width - 1, y, x + width, y + height, COL_HIGHLIGHT);
+        drawRect(x, y + height - 1, x + width, y + height, COL_HIGHLIGHT);
+    }
+
+    /** 刻线：上暗下亮的一像素分隔线。 */
+    private void groove(final int x, final int y, final int width) {
+        drawRect(x, y, x + width, y + 1, COL_SHADOW);
+        drawRect(x, y + 1, x + width, y + 2, COL_HIGHLIGHT);
+    }
+
+    /**
+     * 背包槽位：18×18 的凹陷小格。
+     *
+     * 不用 inset()，因为槽位是紧挨着排的，四条边都描会让相邻格子的高光和阴影叠成一道亮线；
+     * 原版背包槽只靠左上压暗、右下提亮就已经能读出凹陷感。
+     */
+    private void slotBox(final int x, final int y) {
+        drawRect(x, y, x + 18, y + 18, COL_SUNKEN);
+        drawRect(x, y, x + 18, y + 1, COL_SUNKEN_EDGE);
+        drawRect(x, y, x + 1, y + 18, COL_SUNKEN_EDGE);
+        drawRect(x + 17, y, x + 18, y + 18, COL_HIGHLIGHT);
+        drawRect(x, y + 17, x + 18, y + 18, COL_HIGHLIGHT);
+    }
+
+    /**
+     * 输入框：凹槽本身充当边框（左上压暗、右下提亮），聚焦时再加一圈一像素高光。
+     *
+     * 不用外扩描边是因为这里的输入框夹在列表和标签之间，净空只有十几像素，外扩 2px 会顶到
+     * 相邻元素。GuiTextField 的坐标只把边框算在凹槽内部，命中区域不变。
+     */
+    private void drawInput(final GuiTextField field) {
+        final int fx = field.x;
+        final int fy = field.y;
+        final int fw = field.width;
+        final int fh = field.height;
+        if (field.isFocused()) {
+            drawRect(fx - 1, fy - 1, fx + fw + 1, fy + fh + 1, COL_HIGHLIGHT);
+        }
+        inset(fx, fy, fw, fh, field.isFocused() ? COL_INPUT : COL_INPUT_IDLE);
+        field.x = fx + 4;
+        field.y = fy + (fh - 8) / 2;
+        field.drawTextBox();
+        field.x = fx;
+        field.y = fy;
+    }
+
     @Override
     public void initGui() {
         super.initGui();
         final String text = this.input == null ? "" : this.input.getText();
-        this.input = new GuiTextField(0, this.fontRenderer, this.guiLeft + 9, this.guiTop + 130, 188, 14);
+        // 左右边缘与上方规则列表凹槽（x+7 起、宽 188）对齐，避免看上去错开 2px。
+        // 上移 2px、压到 12 高，给下面的「物品栏」标签留出间隙（原来底边正好压在标签顶边上）。
+        this.input = new GuiTextField(0, this.fontRenderer, this.guiLeft + 7, this.guiTop + 128, 188, 12);
         this.input.setMaxStringLength(8000);
+        // 背景必须关掉：开着时 drawTextBox 会多画一层纯黑底、并自行把文字下移一次，
+        // 与 drawInput 里的居中偏移叠加，就成了黑底 + 文字偏下。
+        this.input.setEnableBackgroundDrawing(false);
         this.input.setText(text);
         if (this.container.storage != null) {
             final String priorityText = this.priorityInput == null ? "0" : this.priorityInput.getText();
             this.priorityInput = new GuiTextField(1, this.fontRenderer, this.guiLeft + 211, this.guiTop + 190, 51, 14);
             this.priorityInput.setMaxStringLength(11);
+            this.priorityInput.setEnableBackgroundDrawing(false);
             this.priorityInput.setText(priorityText);
         }
         Keyboard.enableRepeatEvents(true);
@@ -394,63 +476,77 @@ public final class GuiOreExportBus extends AEBaseGui implements IJEIGhostIngredi
 
     @Override
     public void drawBG(final int x, final int y, final int mouseX, final int mouseY) {
-        drawRect(x, y, x + this.xSize, y + this.ySize, 0xffc6c6c6);
-        drawRect(x + (this.black ? 74 : 8), y + 41, x + (this.black ? 138 : 72), y + 43, 0xff367a36);
-        drawRect(x + 7, y + 45, x + 205, y + 127, 0xff383e38);
-        drawRect(x + 211, y + 103, x + 302, y + 125, 0xffe0e9dc);
+        panel(x, y, this.xSize, this.ySize);
+        // 标题区与内容区之间的一像素刻线。
+        groove(x + 6, y + 21, this.xSize - 12);
+        // 白/黑名单切换按钮下方的当前页标识条。
+        drawRect(x + (this.black ? 74 : 8), y + 41, x + (this.black ? 138 : 72), y + 43, COL_SUNKEN_EDGE);
+        // 规则列表凹槽（只铺到滚动条左侧，滚动条自己是一道窄凹槽）。
+        inset(x + 7, y + 45, 188, 82, COL_SUNKEN);
         final OreBusNetwork.State state = this.container.state;
         if (state != null && state.black == this.black) {
             final int row = this.selected - state.offset;
-            if (row >= 0 && row < state.names.size()) { drawRect(x + 9, y + 46 + row * 10, x + 194, y + 56 + row * 10, 0xff456e45); }
-            drawRect(x + 196, y + 46, x + 203, y + 126, 0xff202720);
+            if (row >= 0 && row < state.names.size()) {
+                // 选中行压在凹槽上，左上高光 / 右下阴影做出凸起感。
+                final int rowTop = y + 46 + row * 10;
+                drawRect(x + 9, rowTop, x + 194, rowTop + 10, COL_ROW_SELECTED);
+                drawRect(x + 9, rowTop, x + 194, rowTop + 1, COL_HIGHLIGHT);
+                drawRect(x + 9, rowTop + 9, x + 194, rowTop + 10, COL_SHADOW);
+            }
             final int thumb = state.total <= 8 ? 80 : Math.max(8, 640 / state.total);
             final int top = state.total <= 8 ? 0 : (80 - thumb) * state.offset / (state.total - 8);
-            drawRect(x + 196, y + 46 + top, x + 203, y + 46 + top + thumb, 0xff98ad92);
+            inset(x + 196, y + 46, 7, 80, COL_SUNKEN_EDGE);
+            drawRect(x + 197, y + 47 + top, x + 202, y + 47 + top + Math.max(4, thumb - 2), COL_FACE);
         }
+        // 物品标记区凹槽。
+        inset(x + 211, y + 103, 91, 22, COL_INPUT_IDLE);
+        // 槽位用原版容器的凹陷画法：中灰底 + 左上压暗 / 右下提亮。之前是纯黑外框配浅灰内底，
+        // 深框浅底看着是凸出来的，和原版背包槽的凹陷感相反，一排排紧挨着就很扎眼。
         for (final Slot slot : this.inventorySlots.inventorySlots) {
-            drawRect(x + slot.xPos - 1, y + slot.yPos - 1, x + slot.xPos + 17, y + slot.yPos + 17, 0xff777777);
-            drawRect(x + slot.xPos, y + slot.yPos, x + slot.xPos + 16, y + slot.yPos + 16, 0xffeeeeee);
+            this.slotBox(x + slot.xPos - 1, y + slot.yPos - 1);
         }
         if (this.choices == null) {
-            this.input.drawTextBox();
-            if (this.priorityInput != null) { this.priorityInput.drawTextBox(); }
+            this.drawInput(this.input);
+            if (this.priorityInput != null) { this.drawInput(this.priorityInput); }
         }
     }
 
     @Override
     public void drawFG(final int x, final int y, final int mouseX, final int mouseY) {
         this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(I18n.format(this.container.storage == null
-                ? "item.ae2us.ore_export_bus.name" : "item.ae2us.ore_storage_bus.name"), 124), 8, 8, 0x253925);
+                ? "item.ae2us.ore_export_bus.name" : "item.ae2us.ore_storage_bus.name"), 124), 8, 8, COL_TEXT);
         final OreBusNetwork.State state = this.container.state;
         if (state != null) {
             final String counts = tr("counts", state.whiteCount, state.blackCount);
-            this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(counts, 170), 136, 8, 0x333333);
+            this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(counts, 170), 136, 8, COL_TEXT_DIM);
             if (state.black == this.black) {
                 for (int i = 0; i < state.names.size(); i++) {
+                    // 选中行是浅色凸起块，文字要跟着换成深色才看得清。
+                    final boolean selectedRow = this.selected - state.offset == i;
                     this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth((state.offset + i + 1) + ". " + state.names.get(i), 181),
-                            10, 47 + i * 10, 0xffffff);
+                            10, 47 + i * 10, selectedRow ? COL_TEXT : 0xFFFFFFFF);
                 }
             }
             if (this.container.storage == null) {
-                this.fontRenderer.drawString(tr("budget", state.budget), 205, 187, 0x333333);
+                this.fontRenderer.drawString(tr("budget", state.budget), 205, 187, COL_TEXT_DIM);
             } else {
-                this.fontRenderer.drawString(tr("sticky." + (state.sticky ? 1 : 0)), 211, 233, 0x333333);
+                this.fontRenderer.drawString(tr("sticky." + (state.sticky ? 1 : 0)), 211, 233, COL_TEXT_DIM);
                 if (state.whiteCount == 0 && this.status.isEmpty()) { this.status = tr("empty_storage"); }
                 else if (state.whiteCount > 0 && this.status.equals(tr("empty_storage"))) { this.status = ""; }
             }
         }
-        this.fontRenderer.drawString(tr(this.container.storage == null ? "mode" : "access"), 211, 40, 0x333333);
-        this.fontRenderer.drawString(tr(this.container.storage == null ? "redstone" : "display"), 211, 73, 0x333333);
-        if (this.container.storage != null) { this.fontRenderer.drawString(tr("priority"), 211, 178, 0x333333); }
-        this.fontRenderer.drawString(tr("mark"), 241, 110, 0x284528);
+        this.fontRenderer.drawString(tr(this.container.storage == null ? "mode" : "access"), 211, 40, COL_TEXT_DIM);
+        this.fontRenderer.drawString(tr(this.container.storage == null ? "redstone" : "display"), 211, 73, COL_TEXT_DIM);
+        if (this.container.storage != null) { this.fontRenderer.drawString(tr("priority"), 211, 178, COL_TEXT_DIM); }
+        this.fontRenderer.drawString(tr("mark"), 241, 110, COL_TEXT_DIM);
         // 物品图标走 AEBaseGui.drawItem（GUI 标准光照 + 白颜色）：手搓 renderItemAndEffectIntoGUI
         // 会继承绘制前的遗留 GL 颜色与光照状态，图标比槽位物品暗一截且随场景时暗时亮。
         if (!this.marked.isEmpty()) { this.drawItem(218, 106, this.marked); }
-        this.fontRenderer.drawString(I18n.format("container.inventory"), 8, 144, 0x333333);
-        this.fontRenderer.drawString(tr("upgrades"), 205, 144, 0x333333);
+        this.fontRenderer.drawString(I18n.format("container.inventory"), 8, 144, COL_TEXT_DIM);
+        this.fontRenderer.drawString(tr("upgrades"), 205, 144, COL_TEXT_DIM);
         if (!this.status.isEmpty()) {
             this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(this.status, this.container.storage == null ? 96 : 294),
-                    this.container.storage == null ? 205 : 8, this.container.storage == null ? 201 : 247, 0x993333);
+                    this.container.storage == null ? 205 : 8, this.container.storage == null ? 201 : 247, COL_ERROR);
         }
     }
 
@@ -467,31 +563,32 @@ public final class GuiOreExportBus extends AEBaseGui implements IJEIGhostIngredi
             final int panelX = this.guiLeft + 22;
             final int panelY = listY - 26;
             final int panelH = rows * 18 + 4 + 62;
-            // 框体：窗口同款灰底 + 深墨绿描边（窗口本身没有边框，不描一圈会和窗口糊在一起）。
-            drawRect(panelX - 1, panelY - 1, panelX + 267, panelY + panelH + 1, 0xff383e38);
-            drawRect(panelX, panelY, panelX + 266, panelY + panelH, 0xffc6c6c6);
-            this.fontRenderer.drawString(tr("select_ores"), panelX + 10, panelY + 10, 0x253925);
+            // 框体沿用主窗口的同款像素面板：黑描边 + 灰底 + 明暗层次。
+            this.panel(panelX - 1, panelY - 1, 267, panelH + 2);
+            this.fontRenderer.drawString(tr("select_ores"), panelX + 10, panelY + 9, COL_TEXT);
+            this.groove(panelX + 6, panelY + 20, 255);
             if (!this.marked.isEmpty() && !this.partitionDialog) {
                 // 标题行右侧标明正在给哪个物品选矿典，防手滑选错对象。
                 final int nameRight = panelX + 238;
                 final int nameMax = nameRight - panelX - 18 - this.fontRenderer.getStringWidth(tr("select_ores"));
                 final String name = this.fontRenderer.trimStringToWidth(this.marked.getDisplayName(), Math.max(20, nameMax));
-                this.fontRenderer.drawString(name, nameRight - this.fontRenderer.getStringWidth(name), panelY + 10, 0x333333);
-                this.drawItem(panelX + 242, panelY + 6, this.marked);
+                this.fontRenderer.drawString(name, nameRight - this.fontRenderer.getStringWidth(name), panelY + 9, COL_TEXT_DIM);
+                this.drawItem(panelX + 242, panelY + 5, this.marked);
                 RenderHelper.disableStandardItemLighting();   // drawItem 开了 GUI 光照，名单区绘制要关回去
             }
-            // 名单区：与左列名单同款深墨绿底 + 白字，勾选/悬停用名单里那条选中绿。
+            // 名单区：凹槽 + 凸起的勾选行，与主窗口规则列表同一套层次。
             final int fieldX = panelX + 8;
             final int fieldW = 250;
-            drawRect(fieldX, listY, fieldX + fieldW, listY + rows * 18 + 4, 0xff383e38);
+            final int fieldH = rows * 18 + 4;
+            this.inset(fieldX, listY, fieldW, fieldH, COL_SUNKEN);
             if (this.choices.length > 8) {
                 final int trackX = fieldX + fieldW - 9;
                 final int trackTop = listY + 2;
                 final int trackH = rows * 18;
-                drawRect(trackX, trackTop, trackX + 7, trackTop + trackH, 0xff202720);
+                this.inset(trackX, trackTop, 7, trackH, COL_SUNKEN_EDGE);
                 final int thumb = Math.max(6, trackH * 8 / this.choices.length);
                 final int thumbTop = trackTop + (trackH - thumb) * this.choiceOffset / (this.choices.length - 8);
-                drawRect(trackX, thumbTop, trackX + 7, thumbTop + thumb, 0xff98ad92);
+                drawRect(trackX + 1, thumbTop, trackX + 6, thumbTop + Math.max(4, thumb), COL_FACE);
             }
             final int textMax = fieldW - 28 - (this.choices.length > 8 ? 10 : 0);
             for (int i = 0; i < rows; i++) {
@@ -501,16 +598,23 @@ public final class GuiOreExportBus extends AEBaseGui implements IJEIGhostIngredi
                 final boolean hovered = mouseX >= fieldX && mouseX < fieldX + fieldW
                         && mouseY >= rowY && mouseY < rowY + 18;
                 if (this.checked[index]) {
-                    drawRect(fieldX + 2, rowY, fieldX + fieldW - 2, rowY + 18, 0xff456e45);
+                    drawRect(fieldX + 2, rowY, fieldX + fieldW - 2, rowY + 18, COL_ROW_SELECTED);
+                    drawRect(fieldX + 2, rowY, fieldX + fieldW - 2, rowY + 1, COL_HIGHLIGHT);
+                    drawRect(fieldX + 2, rowY + 17, fieldX + fieldW - 2, rowY + 18, COL_SHADOW);
                 } else if (hovered) {
-                    drawRect(fieldX + 2, rowY, fieldX + fieldW - 2, rowY + 18, 0x60456e45);
+                    drawRect(fieldX + 2, rowY, fieldX + fieldW - 2, rowY + 18, COL_ROW_HOVER);
                 }
+                // 勾选框：凹槽底 + 描边，选中时填实心方块（不只靠颜色区分）。
+                final int boxX = fieldX + 4;
                 final int boxY = rowY + 4;
-                drawRect(fieldX + 4, boxY, fieldX + 15, boxY + 11, 0xff98ad92);
-                drawRect(fieldX + 5, boxY + 1, fieldX + 14, boxY + 10, this.checked[index] ? 0xffe0e9dc : 0xff383e38);
-                if (this.checked[index]) { this.fontRenderer.drawString("x", fieldX + 7, boxY + 2, 0x367a36); }
+                drawRect(boxX, boxY, boxX + 11, boxY + 11, COL_OUTLINE);
+                drawRect(boxX + 1, boxY + 1, boxX + 10, boxY + 10,
+                        this.checked[index] ? COL_TEXT : COL_INPUT_IDLE);
+                if (this.checked[index]) {
+                    drawRect(boxX + 3, boxY + 3, boxX + 8, boxY + 8, COL_INPUT_IDLE);
+                }
                 this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(this.choices[index], textMax),
-                        fieldX + 24, rowY + 5, 0xffffff);
+                        fieldX + 24, rowY + 5, this.checked[index] ? COL_TEXT : 0xFFFFFFFF);
             }
             for (final GuiButton button : this.buttonList) { button.drawButton(this.mc, mouseX, mouseY, partialTicks); }
         } else {

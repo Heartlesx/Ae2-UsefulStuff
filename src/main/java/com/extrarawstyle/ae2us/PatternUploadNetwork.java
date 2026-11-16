@@ -479,8 +479,7 @@ public final class PatternUploadNetwork {
                 for (int j = 0; j < size; j++) {
                     members.add(new PatternUploadService.TargetInfo.MemberInfo(packet.readInt(),
                             BlockPos.fromLong(packet.readLong()), packet.readUnsignedByte(),
-                            packet.readString(128), packet.readVarInt(), packet.readBoolean(),
-                            packet.readByte()));
+                            packet.readString(128), packet.readVarInt(), packet.readBoolean()));
                 }
                 targets.add(new PatternUploadService.TargetInfo(key, name, location, memberCount, freeSlots, members));
             }
@@ -504,7 +503,6 @@ public final class PatternUploadNetwork {
                     packet.writeString(member.location);
                     packet.writeVarInt(member.freeSlots);
                     packet.writeBoolean(member.custom);
-                    packet.writeByte(member.circuit);
                 }
             }
         }

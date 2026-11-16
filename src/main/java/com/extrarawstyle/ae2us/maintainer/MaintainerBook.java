@@ -89,8 +89,9 @@ public final class MaintainerBook {
         if (same) { return true; }
         rule.target = target.copy().setStackSize(1).setCraftable(false).setCountRequestable(0);
         rule.mode = mode;
-        // 新标记的行默认开启智能下单；清空后再标记按新行处理，数值留空。
-        rule.smartPartBatch = true;
+        // 新标记的行默认关闭智能下单（材料不够整批就什么也不做）；
+        // 清空后再标记按新行处理，数值留空。同一目标的重复标记已在上面提前返回，不会动玩家的开关。
+        rule.smartPartBatch = false;
         // 换目标：旧订单继续在 CPU 上跑，本条目只解除关联，不调用 cancel。
         rule.clearOrder();
         rule.observed = 0;

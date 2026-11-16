@@ -57,13 +57,38 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
     /** 每行第二个开关：本条的材料不够整批时减量下单。窗口因此加宽到 376。 */
     private static final int SMART_TOGGLE_X = 352;
 
+    // 原版容器界面配色：硬边、无渐变。色号与样板上传界面（PatternUploadClient）一致。
+    private static final int COL_OUTLINE = 0xFF1B1B1B;
+    private static final int COL_FACE = 0xFFC6C6C6;
+    private static final int COL_HIGHLIGHT = 0xFFFFFFFF;
+    private static final int COL_SHADOW = 0xFF555555;
+    private static final int COL_FIELD = 0xFF8B8B8B;
+    private static final int COL_FIELD_SHADOW = 0xFF373737;
+    private static final int COL_TEXT = 0xFF202020;
+    private static final int COL_TEXT_DIM = 0xFF4A4A4A;
+    private static final int COL_SEPARATOR = 0xFFB4B4B4;
+    private static final int COL_WARN_ROW = 0xFFCDB6B3;
+    private static final int COL_OK_BAR = 0xFF2E7D32;
+    private static final int COL_WARN_BAR = 0xFFA0352F;
+    private static final int COL_WARN_TEXT = 0xFFA0352F;
+    /** 按钮脸：常态灰面加左上高光 / 右下阴影，与 widgets.png 观感一致。 */
+    private static final int COL_BUTTON = 0xFF6D6D6D;
+    private static final int COL_BUTTON_HIGHLIGHT = 0xFFA0A0A0;
+    private static final int COL_BUTTON_SHADOW = 0xFF3A3A3A;
+
     private final ContainerStockMaintainer container;
     private final GuiTextField[] thresholds = new GuiTextField[ROWS];
     private final GuiTextField[] batches = new GuiTextField[ROWS];
     private final String[] committedThresholds = new String[ROWS];
     private final String[] committedBatches = new String[ROWS];
-    /** 每行的待定模式：仅客户端，不随目标一起同步。 */
+    /** 每行的待定模式：仅客户端，不随目标一起同步。只在当前页有效，翻页即回到物品。 */
     private final int[] pendingMode = new int[ROWS];
+    /**
+     * 上一次已经应用的服务端状态页码；-1 表示还没收到过状态。
+     * 翻页请求发出后页码不会立刻变，真正换页以服务端回来的 {@code state.page} 为准，
+     * 所以这里记的是「已确认的页」，不是「请求的页」。
+     */
+    private int appliedPage = -1;
     private String status = "";
 
     public GuiStockMaintainer(final ContainerStockMaintainer container) {
@@ -75,6 +100,55 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
 
     private static String tr(final String key, final Object... args) {
         return I18n.format("ae2us.maintainer." + key, args);
+    }
+
+    // ---------------------------------------------------------------- 原版像素绘制
+
+    /** 原版容器面板：黑描边、灰底面、左上高光 / 右下阴影，全部一像素硬边。 */
+    private static void panel(final int x, final int y, final int width, final int height) {
+        drawRect(x, y, x + width, y + height, COL_OUTLINE);
+        drawRect(x + 1, y + 1, x + width - 1, y + height - 1, COL_FACE);
+        drawRect(x + 1, y + 1, x + width - 1, y + 2, COL_HIGHLIGHT);
+        drawRect(x + 1, y + 1, x + 2, y + height - 1, COL_HIGHLIGHT);
+        drawRect(x + 1, y + height - 2, x + width - 1, y + height - 1, COL_SHADOW);
+        drawRect(x + width - 2, y + 1, x + width - 1, y + height - 1, COL_SHADOW);
+    }
+
+    /** 凹槽：左上压暗、右下提亮，用来做槽位、模式格和输入框底。 */
+    private static void inset(final int x, final int y, final int width, final int height, final int fill) {
+        drawRect(x, y, x + width, y + height, fill);
+        drawRect(x, y, x + width, y + 1, COL_FIELD_SHADOW);
+        drawRect(x, y, x + 1, y + height, COL_FIELD_SHADOW);
+        drawRect(x + width - 1, y, x + width, y + height, COL_HIGHLIGHT);
+        drawRect(x, y + height - 1, x + width, y + height, COL_HIGHLIGHT);
+    }
+
+    /** 刻线：上暗下亮的一像素分隔线（原版标题栏下那条）。 */
+    private static void groove(final int x, final int y, final int width) {
+        drawRect(x, y, x + width, y + 1, COL_SHADOW);
+        drawRect(x, y + 1, x + width, y + 2, COL_HIGHLIGHT);
+    }
+
+    /** 按钮脸：黑描边 + 灰面；pressed 时明暗反过来，读作「按下去」。 */
+    private static void buttonFace(final int x, final int y, final int width, final int height,
+                                   final boolean pressed) {
+        drawRect(x, y, x + width, y + height, COL_OUTLINE);
+        drawRect(x + 1, y + 1, x + width - 1, y + height - 1, COL_BUTTON);
+        final int top = pressed ? COL_BUTTON_SHADOW : COL_BUTTON_HIGHLIGHT;
+        final int bottom = pressed ? COL_BUTTON_HIGHLIGHT : COL_BUTTON_SHADOW;
+        drawRect(x + 1, y + 1, x + width - 1, y + 2, top);
+        drawRect(x + 1, y + 1, x + 2, y + height - 1, top);
+        drawRect(x + 1, y + height - 2, x + width - 1, y + height - 1, bottom);
+        drawRect(x + width - 2, y + 1, x + width - 1, y + height - 1, bottom);
+    }
+
+    /** 像素对勾：5×5 里点几块 1px 方块，画在按钮中央。 */
+    private static void drawTick(final int x, final int y, final int color) {
+        drawRect(x, y + 3, x + 1, y + 4, color);
+        drawRect(x + 1, y + 4, x + 2, y + 5, color);
+        drawRect(x + 2, y + 3, x + 3, y + 4, color);
+        drawRect(x + 3, y + 2, x + 4, y + 3, color);
+        drawRect(x + 4, y + 1, x + 5, y + 2, color);
     }
 
     @Override
@@ -100,8 +174,20 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
         field.y = this.guiTop + y;
         field.setMaxStringLength(24);
         field.setEnableBackgroundDrawing(false);
-        field.setTextColor(0x304449);
+        field.setTextColor(0x1A1A1A);
         return field;
+    }
+
+    /**
+     * 画一个输入框。背景由 drawFieldBox 自绘，所以关掉了 GuiTextField 自带背景；
+     * 关掉后文字会从 field.x 直接起笔、贴着凹底左边缘，这里绘制期间临时右移 3px，画完还原
+     * —— mouseClicked 用的是原始坐标，命中区仍覆盖整个可见输入框。
+     */
+    private void drawField(final GuiTextField field) {
+        final int x = field.x;
+        field.x = x + 3;
+        field.drawTextBox();
+        field.x = x;
     }
 
     private void send(final int operation, final int index, final String text, final ItemStack stack) {
@@ -268,19 +354,21 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
                 }
                 return;
             }
-            if (state != null && state.configured[i] && this.isPointInRegion(TOGGLE_X, rowY + 4, 16, 9, x, y)) {
+            if (state != null && state.configured[i] && this.isPointInRegion(TOGGLE_X, rowY, 16, 16, x, y)) {
                 this.commitAll();
                 this.send(StockMaintainerNetwork.SET_ENABLED, index, state.enabled[i] ? "0" : "1", ItemStack.EMPTY);
                 return;
             }
             if (state != null && state.configured[i]
-                    && this.isPointInRegion(SMART_TOGGLE_X, rowY + 4, 16, 9, x, y)) {
+                    && this.isPointInRegion(SMART_TOGGLE_X, rowY, 16, 16, x, y)) {
                 this.commitAll();
                 this.send(StockMaintainerNetwork.SET_SMART_PART_BATCH, index,
                         state.smartPartBatches[i] ? "0" : "1", ItemStack.EMPTY);
                 return;
-            }            // 状态格被换成「确定」按钮时点它：只提交本行，不牵动别的行。
-            if (this.dirty(i) && this.isPointInRegion(STATE_X, rowY + 4, CONFIRM_W, 9, x, y)) {
+            }
+            // 状态格被换成「确定」按钮时点它：只提交本行，不牵动别的行。
+            // 命中区与画出来的按钮一致（rowY+1..rowY+16），否则上下各有几像素点了没反应。
+            if (this.dirty(i) && this.isPointInRegion(STATE_X, rowY + 1, CONFIRM_W, 15, x, y)) {
                 this.confirmRow(i);
                 return;
             }
@@ -342,10 +430,18 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
     /**
      * 服务器状态到达时校准基准值与待定模式。
      * 只在校准值真的变了时才写回输入框：否则未提交的编辑会被每帧覆盖掉。
+     *
+     * <p>待定模式的归零只在这里、只按「已确认的页码」发生：首个有效状态、或服务端确认的页
+     * 真的换了，就把 8 个槽重新初始化成物品；同页的普通刷新原样保留玩家的手动选择。
+     * 翻页按钮、滚轮、上一页/下一页最终都是发一个请求，换页统一由这一处识别。</p>
      */
     private void syncFromState() {
         final StockMaintainerNetwork.State state = this.container.state;
         if (state == null) { return; }
+        if (state.page != this.appliedPage) {
+            this.appliedPage = state.page;
+            java.util.Arrays.fill(this.pendingMode, MaintainerRule.MODE_ITEM);
+        }
         for (int i = 0; i < ROWS; i++) {
             final String threshold = state.thresholds[i] > 0 ? MaintainerAmount.format(state.thresholds[i]) : "";
             final String batch = state.batches[i] > 0 ? MaintainerAmount.format(state.batches[i]) : "";
@@ -357,7 +453,6 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
                 this.committedBatches[i] = batch;
                 if (!this.batches[i].isFocused()) { this.batches[i].setText(batch); }
             }
-            this.pendingMode[i] = state.configured[i] ? state.modes[i] : this.pendingMode[i];
         }
     }
 
@@ -372,25 +467,25 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
 
     @Override
     public void drawBG(final int x, final int y, final int mouseX, final int mouseY) {
-        drawRect(x, y, x + this.xSize, y + this.ySize, 0xff344b4d);
-        drawRect(x + 2, y + 2, x + 374, y + 270, 0xffd9e2dc);
-        drawRect(x + 2, y + 2, x + 374, y + 25, 0xff263a40);
-        drawRect(x + 2, y + 2, x + 5, y + 25, 0xff3cd4b2);
+        panel(x, y, this.xSize, this.ySize);
         this.drawHeaderSignal(x, y);
-        drawRect(x + 6, y + 28, x + 370, y + 39, 0xffb6c8c0);
+        groove(x + 4, y + 25, this.xSize - 8);
         final StockMaintainerNetwork.State state = this.container.state;
         for (int i = 0; i < ROWS; i++) {
             final int rowY = y + TOP + i * ROW_H;
             final boolean configured = state != null && state.configured[i];
             final boolean warning = state != null && configured && this.warning(state.statuses[i]);
-            drawRect(x + 6, rowY, x + 370, rowY + 16,
-                    warning ? 0xfff3dedb : i % 2 == 0 ? 0xffe6eee8 : 0xffedf3ed);
-            if (configured) {
-                drawRect(x + 6, rowY, x + 9, rowY + 16, warning ? 0xffdc544e : 0xff4eb499);
+            if (warning) {
+                drawRect(x + 6, rowY, x + 370, rowY + 16, COL_WARN_ROW);
             }
-            this.drawModeChip(x, rowY, this.modeOf(state, i));
-            drawRect(x + SLOT_X, rowY, x + SLOT_X + 16, rowY + 16, 0xffafc1ba);
-            drawRect(x + SLOT_X + 1, rowY + 1, x + SLOT_X + 15, rowY + 15, 0xfff4f7f1);
+            if (i < ROWS - 1) {
+                drawRect(x + 6, rowY + 16, x + 370, rowY + 17, COL_SEPARATOR);
+            }
+            if (configured) {
+                drawRect(x + 4, rowY, x + 6, rowY + 16, warning ? COL_WARN_BAR : COL_OK_BAR);
+            }
+            this.drawModeChip(x, rowY);
+            inset(x + SLOT_X, rowY, 16, 16, COL_FIELD);
             this.drawFieldBox(x, rowY, THRESHOLD_X, warning);
             this.drawFieldBox(x, rowY, BATCH_X, warning);
             this.drawConfirm(x, rowY, this.dirty(i));
@@ -398,8 +493,7 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
             this.drawSmartToggle(x, rowY, state, i);
         }
         for (final Slot slot : this.inventorySlots.inventorySlots) {
-            drawRect(x + slot.xPos, y + slot.yPos, x + slot.xPos + 16, y + slot.yPos + 16, 0xffb9c8c2);
-            drawRect(x + slot.xPos + 1, y + slot.yPos + 1, x + slot.xPos + 15, y + slot.yPos + 15, 0xffedf2ec);
+            inset(x + slot.xPos, y + slot.yPos, 16, 16, COL_FIELD);
         }
         RenderHelper.enableGUIStandardItemLighting();
         if (state != null) {
@@ -411,26 +505,25 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
             }
         }
         RenderHelper.disableStandardItemLighting();
-        for (final GuiTextField field : this.thresholds) { field.drawTextBox(); }
-        for (final GuiTextField field : this.batches) { field.drawTextBox(); }
+        for (final GuiTextField field : this.thresholds) { this.drawField(field); }
+        for (final GuiTextField field : this.batches) { this.drawField(field); }
     }
 
+    /** 输入框：黑框 + 凹槽底。凹槽自带左上暗、右下亮，就是原版输入框的样子。 */
     private void drawFieldBox(final int x, final int rowY, final int fieldX, final boolean warning) {
         drawRect(x + fieldX - 1, rowY + 1, x + fieldX + FIELD_W, rowY + 15,
-                warning ? 0xffc7a8a3 : 0xffa7bdb4);
-        drawRect(x + fieldX, rowY + 2, x + fieldX + FIELD_W - 1, rowY + 14, 0xfffbfffb);
+                warning ? 0xFF8C6B67 : COL_OUTLINE);
+        inset(x + fieldX, rowY + 2, FIELD_W - 1, 12, COL_FACE);
     }
 
     private void drawConfirm(final int x, final int rowY, final boolean dirty) {
         if (!dirty) { return; }
-        drawRect(x + STATE_X, rowY + 1, x + STATE_X + CONFIRM_W, rowY + 16, 0xff2f7a68);
-        drawRect(x + STATE_X + 1, rowY + 2, x + STATE_X + CONFIRM_W - 1, rowY + 15, 0xff3f9c85);
+        buttonFace(x + STATE_X, rowY + 1, CONFIRM_W, 15, false);
     }
 
-    private void drawModeChip(final int x, final int rowY, final int mode) {
-        final boolean fluid = mode == MaintainerRule.MODE_FLUID;
-        drawRect(x + MODE_X, rowY + 4, x + MODE_X + MODE_W, rowY + 13, fluid ? 0xff3f7f9c : 0xff6d8b80);
-        drawRect(x + MODE_X + 1, rowY + 5, x + MODE_X + MODE_W - 1, rowY + 12, fluid ? 0xffa8d8ef : 0xffd5e6dd);
+    /** 模式格：凹槽底。文字在 drawFG 里画，因为 drawBG 阶段不画文字。 */
+    private void drawModeChip(final int x, final int rowY) {
+        inset(x + MODE_X, rowY + 3, MODE_W, 10, COL_FIELD);
     }
 
     private void drawHeaderSignal(final int x, final int y) {
@@ -442,67 +535,68 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
                 if (state.configured[i] && MaintainerStatus.holdsOrder(state.statuses[i])) { working++; }
             }
         }
-        drawRect(x + 275, y + 6, x + 344, y + 21, online && working > 0 ? 0xff345f58 : 0xff40545a);
-        drawRect(x + 279, y + 10, x + 284, y + 16, online && working > 0 ? 0xff3cd4b2 : 0xff607579);
+        drawRect(x + 296, y + 7, x + 306, y + 17, COL_OUTLINE);
+        drawRect(x + 297, y + 8, x + 305, y + 16,
+                online && working > 0 ? 0xFF4CBB4C : online ? 0xFFB09A3C : COL_SHADOW);
     }
 
     private void drawToggle(final int x, final int rowY, final StockMaintainerNetwork.State state, final int i) {
         if (state == null || !state.configured[i]) { return; }
         final boolean on = state.enabled[i];
-        drawRect(x + TOGGLE_X, rowY + 4, x + TOGGLE_X + 16, rowY + 13, on ? 0xff2f7a68 : 0xff9aaca5);
-        drawRect(x + TOGGLE_X + (on ? 8 : 1), rowY + 5, x + TOGGLE_X + (on ? 15 : 8), rowY + 12,
-                on ? 0xffc8f2e2 : 0xffe3ebe5);
+        buttonFace(x + TOGGLE_X, rowY, 16, 16, on);
+        if (on) { drawTick(x + TOGGLE_X + 6, rowY + 5, 0xFFF2F2F2); }
     }
 
-    /** 每行第二个开关：本条的材料不够整批时减量下单。与左边启用开关同款画法。 */
+    /** 每行第二个开关：本条的材料不够整批时减量下单。与左边启用开关同款画法，对勾用暖黄区分。 */
     private void drawSmartToggle(final int x, final int rowY, final StockMaintainerNetwork.State state, final int i) {
         if (state == null || !state.configured[i]) { return; }
         final boolean on = state.smartPartBatches[i];
-        drawRect(x + SMART_TOGGLE_X, rowY + 4, x + SMART_TOGGLE_X + 16, rowY + 13,
-                on ? 0xff3f7f9c : 0xff9aaca5);
-        drawRect(x + SMART_TOGGLE_X + (on ? 8 : 1), rowY + 5, x + SMART_TOGGLE_X + (on ? 15 : 8), rowY + 12,
-                on ? 0xffa8d8ef : 0xffe3ebe5);
+        buttonFace(x + SMART_TOGGLE_X, rowY, 16, 16, on);
+        if (on) { drawTick(x + SMART_TOGGLE_X + 6, rowY + 5, 0xFFFFD24A); }
     }
 
     @Override
     public void drawFG(final int x, final int y, final int mouseX, final int mouseY) {
-        this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(tr("title"), 200), 11, 9, 0xf1f5ef);
+        this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(tr("title"), 200), 8, 9, COL_TEXT);
         final StockMaintainerNetwork.State state = this.container.state;
         if (state != null) {
             final String label = state.status == TileStockMaintainer.STATUS_ACTIVE ? tr("active")
                     : state.status == TileStockMaintainer.STATUS_NO_CHANNEL ? tr("no_channel") : tr("no_power");
-            this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(label, 43), 288, 9, 0xf1f5ef);
+            this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(label, 43), 310, 9, COL_TEXT_DIM);
         }
-        this.fontRenderer.drawString((this.container.page + 1) + " / " + PAGES, 296, 181, 0x324b4d);
+        this.fontRenderer.drawString((this.container.page + 1) + " / " + PAGES, 296, 181, COL_TEXT_DIM);
         if (state != null) {
             for (int i = 0; i < ROWS; i++) { this.drawRowText(state, i); }
         }
         for (int i = 0; i < ROWS; i++) { this.drawConfirmText(i); }
-        this.fontRenderer.drawString(tr("mark"), 54, 30, 0x355050);
-        this.fontRenderer.drawString(tr("current"), 120, 30, 0x355050);
-        this.fontRenderer.drawString(tr("threshold"), 168, 30, 0x355050);
-        this.fontRenderer.drawString(tr("batch"), 218, 30, 0x355050);
-        this.fontRenderer.drawString(tr("state"), 268, 30, 0x355050);
+        this.fontRenderer.drawString(tr("mark"), NAME_X, 30, COL_TEXT_DIM);
+        this.fontRenderer.drawString(tr("current"), COUNT_X, 30, COL_TEXT_DIM);
+        this.fontRenderer.drawString(tr("threshold"), THRESHOLD_X, 30, COL_TEXT_DIM);
+        this.fontRenderer.drawString(tr("batch"), BATCH_X, 30, COL_TEXT_DIM);
+        this.fontRenderer.drawString(tr("state"), STATE_X, 30, COL_TEXT_DIM);
+        this.fontRenderer.drawString(tr("enable"), TOGGLE_X, 30, COL_TEXT_DIM);
+        this.fontRenderer.drawString(tr("smart"), SMART_TOGGLE_X, 30, COL_TEXT_DIM);
         final String footer = this.status.isEmpty() ? I18n.format("container.inventory") : this.status;
         this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(footer, 150), 58, 181,
-                this.status.isEmpty() ? 0x3e5555 : 0xaa3b37);
+                this.status.isEmpty() ? COL_TEXT_DIM : COL_WARN_TEXT);
     }
 
     private void drawRowText(final StockMaintainerNetwork.State state, final int i) {
         final int rowY = TOP + i * ROW_H + 4;
         final int mode = this.modeOf(state, i);
+        final String modeText = mode == MaintainerRule.MODE_FLUID ? tr("fluid") : tr("item_mode");
         if (!state.configured[i]) {
             // 未配置行只画模式文字，目标名称区留空。
-            this.fontRenderer.drawString(mode == MaintainerRule.MODE_FLUID ? tr("fluid") : tr("item_mode"),
-                    MODE_X, rowY, 0x7c918c);
+            this.fontRenderer.drawString(modeText, MODE_X + 2, rowY, COL_TEXT_DIM);
             return;
         }
-        this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(state.labels[i], NAME_W), NAME_X, rowY, 0x2d4144);
+        this.fontRenderer.drawString(modeText, MODE_X + 2, rowY, COL_TEXT);
+        this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(state.labels[i], NAME_W), NAME_X, rowY, COL_TEXT);
         final String count = state.countsValid[i]
                 ? MaintainerAmount.compact(state.counts[i]) + (mode == MaintainerRule.MODE_FLUID ? "mB" : "")
                 : "-";
         this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(count, 44), COUNT_X, rowY,
-                state.countsValid[i] ? 0x2d6260 : 0x7c918c);
+                state.countsValid[i] ? COL_TEXT : COL_TEXT_DIM);
         // 状态格让位给「确定」按钮时，状态文字不画（按钮点击后状态自然回来）。
         if (this.dirty(i)) { return; }
         // 减量下的单要看得见实下多少；整批就照旧只写「合成中」，不添噪声。
@@ -512,15 +606,17 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
                 ? this.stateLabel(state.statuses[i]) + " " + MaintainerAmount.compact(state.orderBatches[i])
                 : this.stateLabel(state.statuses[i]);
         this.fontRenderer.drawString(this.fontRenderer.trimStringToWidth(stateText, 60),
-                STATE_X, rowY, this.warning(state.statuses[i]) ? 0xad3e3b : 0x2d6260);
+                STATE_X, rowY, this.warning(state.statuses[i]) ? COL_WARN_TEXT : COL_TEXT);
     }
 
     /** 「确定」按钮上的文字。drawFG 里画，drawBG 阶段不画文字。 */
     private void drawConfirmText(final int i) {
         if (!this.dirty(i)) { return; }
         final String label = tr("confirm");
-        final int textX = STATE_X + (CONFIRM_W + 34 - this.fontRenderer.getStringWidth(label)) / 2;
-        this.fontRenderer.drawString(label, textX, TOP + i * ROW_H + 4, 0xf1f5ef);
+        // 按钮铺的是 STATE_X..STATE_X+CONFIRM_W、rowY+1..rowY+16，文字按这块矩形居中。
+        final int textX = STATE_X + (CONFIRM_W - this.fontRenderer.getStringWidth(label)) / 2;
+        final int textY = TOP + i * ROW_H + 1 + (15 - this.fontRenderer.FONT_HEIGHT) / 2;
+        this.fontRenderer.drawString(label, textX, textY, 0xFFFFFFFF);
     }
 
     private String stateLabel(final int status) {
@@ -570,11 +666,11 @@ public final class GuiStockMaintainer extends AEBaseGui implements IJEIGhostIngr
                     this.drawHoveringText(this.stateHint(state.statuses[i]), mouseX, mouseY);
                 }
             }
-            if (this.isPointInRegion(TOGGLE_X, rowY + 4, 16, 9, mouseX, mouseY)) {
+            if (this.isPointInRegion(TOGGLE_X, rowY, 16, 16, mouseX, mouseY)) {
                 this.drawHoveringText(tr(state.enabled[i] ? "toggle_off" : "toggle_on"), mouseX, mouseY);
             }
             // 智能下单开关：除了说明当前状态，还要讲清开它会有什么后果。
-            if (this.isPointInRegion(SMART_TOGGLE_X, rowY + 4, 16, 9, mouseX, mouseY)) {
+            if (this.isPointInRegion(SMART_TOGGLE_X, rowY, 16, 16, mouseX, mouseY)) {
                 this.drawHoveringText(java.util.Arrays.asList(
                         tr(state.smartPartBatches[i] ? "smart_off" : "smart_on"), tr("smart_risk")),
                         mouseX, mouseY);

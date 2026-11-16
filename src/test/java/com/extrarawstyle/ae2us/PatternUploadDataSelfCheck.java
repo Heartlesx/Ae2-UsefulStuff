@@ -21,6 +21,10 @@ public final class PatternUploadDataSelfCheck {
                 "mapping overrides the title");
         check("Wiremill".equals(data.targetName(bob, "gregtech.wiremill", "Wiremill")),
                 "another player cannot see the mapping");
+        check(data.targetName(bob, "gregtech.wiremill", "").isEmpty(),
+                "no mapping and no default name returns empty (server defers to the client)");
+        check("Copper line".equals(data.targetName(alice, "gregtech.wiremill", "")),
+                "a saved mapping still wins over an empty default name");
 
         check(data.save(alice, "gregtech.wiremill", "gregtech.wiremill.new", "Wiremill", "Copper line"),
                 "rename mapping key");

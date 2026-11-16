@@ -397,7 +397,9 @@ public final class StockMaintainerSelfCheck {
     }
 
     /**
-     * 逐条开关：新标记的行默认开启，老存档（方块级开关时代）按当时的全局值迁移下来。
+     * 智能补货的逐条开关：新标记（首次、清空后重建、换成不同目标）默认关闭；
+     * 手动开过之后，只有「同一行重标完全相同目标」才保持无操作语义。
+     * 老存档（方块级开关时代）按当时的全局值迁移下来。
      */
     private static void smartPartBatchChecks() {
         final MaintainerBook book = new MaintainerBook();
@@ -407,29 +409,57 @@ public final class StockMaintainerSelfCheck {
         book.setTarget(0, AEItemStack.fromItemStack(new ItemStack(Items.IRON_INGOT)), MaintainerRule.MODE_ITEM);
         book.setThreshold(0, 500);
         book.setBatch(0, 100);
-        check(book.rule(0).smartPartBatch, "a newly marked row turns smart batch on by default");
+        check(!book.rule(0).smartPartBatch, "a newly marked row leaves smart batch off");
 
         // 逐条独立：动一条不影响另一条。
         book.setTarget(1, AEItemStack.fromItemStack(new ItemStack(Items.GOLD_INGOT)), MaintainerRule.MODE_ITEM);
         book.setThreshold(1, 500);
         book.setBatch(1, 100);
-        check(book.rule(1).smartPartBatch, "a second marked row is on as well");
-        book.setSmartPartBatch(0, false);
-        check(!book.rule(0).smartPartBatch, "turning one row off works");
-        check(book.rule(1).smartPartBatch, "turning one row off leaves the other row alone");
+        check(!book.rule(1).smartPartBatch, "a second marked row is off as well");
+        book.setSmartPartBatch(0, true);
+        check(book.rule(0).smartPartBatch, "turning one row on works");
+        check(!book.rule(1).smartPartBatch, "turning one row on leaves the other row alone");
 
         final long before = book.configRevision();
-        book.setSmartPartBatch(0, false);
-        check(book.configRevision() == before, "setting the same value does not churn the config revision");
         book.setSmartPartBatch(0, true);
+        check(book.configRevision() == before, "setting the same value does not churn the config revision");
+        book.setSmartPartBatch(0, false);
         check(book.configRevision() != before, "toggling invalidates pending plans");
 
-        // 清空后重建按新行处理：默认开启。
+        // 同一行重标完全相同目标：无操作语义，不能把玩家手动开的开关重置掉。
+        book.setSmartPartBatch(0, true);
+        final long sameTargetRevision = book.configRevision();
+        check(book.setTarget(0, AEItemStack.fromItemStack(new ItemStack(Items.IRON_INGOT)),
+                MaintainerRule.MODE_ITEM), "re-marking the identical target is accepted");
+        check(book.rule(0).smartPartBatch, "re-marking the identical target keeps the player's switch");
+        check(book.configRevision() == sameTargetRevision, "re-marking the identical target changes nothing");
+
+        // 换成不同目标：默认关闭。
+        check(book.setTarget(0, AEItemStack.fromItemStack(new ItemStack(Items.APPLE)),
+                MaintainerRule.MODE_ITEM), "changing to a different target is accepted");
+        check(!book.rule(0).smartPartBatch, "changing the target turns smart batch off");
+
+        // 清空后重建按新行处理：默认关闭。
+        book.setSmartPartBatch(0, true);
         book.setTarget(0, null, MaintainerRule.MODE_ITEM);
         book.setTarget(0, AEItemStack.fromItemStack(new ItemStack(Items.DIAMOND)), MaintainerRule.MODE_ITEM);
-        check(book.rule(0).smartPartBatch, "re-marking after a clear behaves like a new row");
+        check(!book.rule(0).smartPartBatch, "re-marking after a clear behaves like a new row");
 
-        // 逐条存盘往返。
+        // 流体目标同一套默认值（同一个配置入口，不按类型分叉）。
+        // 「换成另一种流体」这条走不到：判同要调 AEFluidStack.equals，而它依赖 FML 平台比较器，
+        // 离线自检里没有 FML 运行环境（本文件 nbtChecks 已记录同一限制）。这里覆盖首次标记与清空后重建。
+        final MaintainerBook fluidBook = new MaintainerBook();
+        final appeng.api.storage.data.IAEFluidStack water =
+                appeng.fluids.util.AEFluidStack.fromFluidStack(
+                        new net.minecraftforge.fluids.FluidStack(net.minecraftforge.fluids.FluidRegistry.WATER, 1000));
+        check(fluidBook.setTarget(0, water, MaintainerRule.MODE_FLUID), "a fluid target is accepted");
+        check(!fluidBook.rule(0).smartPartBatch, "a newly marked fluid row leaves smart batch off");
+        fluidBook.setSmartPartBatch(0, true);
+        check(fluidBook.setTarget(0, null, MaintainerRule.MODE_ITEM), "clearing the fluid row is accepted");
+        check(fluidBook.setTarget(0, water, MaintainerRule.MODE_FLUID), "re-marking a fluid after a clear is accepted");
+        check(!fluidBook.rule(0).smartPartBatch, "re-marking a fluid after a clear leaves smart batch off");
+
+        // 逐条存盘往返：一条开、一条关，不能靠「标记时默认开」凑出来。
         final MaintainerBook saved = new MaintainerBook();
         saved.setTarget(0, AEItemStack.fromItemStack(new ItemStack(Items.IRON_INGOT)), MaintainerRule.MODE_ITEM);
         saved.setThreshold(0, 500);
@@ -437,6 +467,7 @@ public final class StockMaintainerSelfCheck {
         saved.setTarget(1, AEItemStack.fromItemStack(new ItemStack(Items.GOLD_INGOT)), MaintainerRule.MODE_ITEM);
         saved.setThreshold(1, 500);
         saved.setBatch(1, 100);
+        saved.setSmartPartBatch(0, true);
         saved.setSmartPartBatch(1, false);
         final MaintainerBook restored = roundTrip(saved);
         check(restored.rule(0).smartPartBatch, "the per-row switch survives NBT roundtrip (on)");

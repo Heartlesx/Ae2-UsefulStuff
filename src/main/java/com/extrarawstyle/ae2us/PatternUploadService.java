@@ -23,7 +23,6 @@ import appeng.parts.AEBasePart;
 import appeng.parts.misc.PartInterface;
 import appeng.tile.misc.TileInterface;
 import appeng.tile.networking.TileCableBus;
-import gregtech.api.capability.IGhostSlotConfigurable;
 import gregtech.api.metatileentity.MetaTileEntity;
 import gregtech.api.metatileentity.MetaTileEntityHolder;
 import gregtech.api.metatileentity.interfaces.IGregTechTileEntity;
@@ -92,7 +91,7 @@ public final class PatternUploadService {
             final List<TargetInfo.MemberInfo> members = new ArrayList<>(group.members.size());
             for (final Target target : group.members) {
                 members.add(new TargetInfo.MemberInfo(target.dimension, target.pos, target.side,
-                        target.location(), target.freeSlots, customNamed(target.host), target.circuit));
+                        target.location(), target.freeSlots, customNamed(target.host)));
             }
             result.add(new TargetInfo(group.key, group.name, group.location,
                     group.members.size(), group.freeSlots, members));
@@ -242,7 +241,13 @@ public final class PatternUploadService {
         status(player, "ae2us.upload.unavailable");
     }
 
-    /** 自动上传只匹配完整名字；同名组内多台接口按现有顺序选择有空位的那台。 */
+    /**
+     * 自动上传：只有玩家显式保存了当前路由 UID 的映射时，服务端才直接按映射名写入。
+     *
+     * <p>没有映射时一律返回 {@code true}，让客户端拿目标列表自己判断——名称翻译、搜索规则
+     * 都在客户端，服务端按另一套名称规则计数无法和玩家看到的列表一致。
+     * 同名组内多台接口仍按现有顺序选择有空位的那台。</p>
+     */
     public static boolean autoUpload(final EntityPlayerMP player) {
         if (!PatternUploadData.get(player).enabled(player.getUniqueID())) {
             return true;
@@ -255,8 +260,7 @@ public final class PatternUploadService {
         if (uid.isEmpty()) {
             return true;
         }
-        final String name = PatternUploadData.get(player).targetName(player.getUniqueID(), uid,
-                PatternCategory.requiresMoldMapping(context.stack) ? "" : PatternCategory.title(context.stack));
+        final String name = PatternUploadData.get(player).targetName(player.getUniqueID(), uid, "");
         if (name.isEmpty()) {
             return true;
         }
@@ -703,8 +707,18 @@ public final class PatternUploadService {
     }
 
     public static final class TargetInfo {
+        /**
+         * 按完整名称选组。
+         *
+         * @param requireSingleRow 未保存映射时为 {@code true}：候选（UI 过滤后的完整结果）必须恰好一行，
+         *                         否则返回 {@code null}；已保存映射为 {@code false}，保留完整名优先规则。
+         *                         只负责选组，可写空槽由调用方判断。
+         */
         public static TargetInfo findByName(final List<TargetInfo> targets, final String name,
-                final Function<String, String> localize) {
+                final boolean requireSingleRow, final Function<String, String> localize) {
+            if (requireSingleRow && targets.size() != 1) {
+                return null;
+            }
             TargetInfo match = null;
             for (final TargetInfo target : targets) {
                 if (target.name.equals(name)) {
@@ -746,23 +760,15 @@ public final class PatternUploadService {
             public final String location;
             public final int freeSlots;
             public final boolean custom;
-            /** 这台宿主配的幽灵电路号；-1 表示没配。只用于显示，不参与自动匹配。 */
-            public final int circuit;
 
             public MemberInfo(final int dimension, final BlockPos pos, final int side,
                     final String location, final int freeSlots, final boolean custom) {
-                this(dimension, pos, side, location, freeSlots, custom, -1);
-            }
-
-            public MemberInfo(final int dimension, final BlockPos pos, final int side,
-                    final String location, final int freeSlots, final boolean custom, final int circuit) {
                 this.dimension = dimension;
                 this.pos = pos;
                 this.side = side;
                 this.location = location;
                 this.freeSlots = freeSlots;
                 this.custom = custom;
-                this.circuit = circuit;
             }
         }
     }
@@ -802,8 +808,6 @@ public final class PatternUploadService {
         private final int dimension;
         private final BlockPos pos;
         private final int side;
-        /** 这台宿主自己配的电路号；-1 表示没配（或不是 GT 的可配置机器）。 */
-        private final int circuit;
         private int freeSlots;
 
         private Target(final IInterfaceHost host, final TileEntity tile) {
@@ -812,39 +816,11 @@ public final class PatternUploadService {
             this.dimension = tile.getWorld().provider.getDimension();
             this.pos = tile.getPos();
             this.side = host instanceof AEBasePart ? ((AEBasePart) host).getSide().ordinal() : 6;
-            this.circuit = circuitOf(host);
         }
 
         private String location() {
             return dimension + ": " + pos.getX() + ", " + pos.getY() + ", " + pos.getZ()
                     + (side == 6 ? "" : " / " + appeng.api.util.AEPartLocation.fromOrdinal(side).name());
-        }
-    }
-
-    /**
-     * 宿主自己配的幽灵电路号；读不到返回 -1（未配置）。
-     *
-     * GT 的样板输入总成用幽灵电路区分同一台机器的配方分支，玩家就是靠它（配合改名）分开接线。
-     * 这里读出来只用于在选择框里显示，<b>不参与自动匹配</b>——玩家的意图写在名字里，名字才是唯一依据。
-     *
-     * 读法：GT 没有给 IGhostSlotConfigurable 提供 getter，但总成的 writeToNBT 会把电路值写进
-     * 根节点的 GhostCircuit 键（未配置时不写这个键）。注意 GT 机器的 NBT 是嵌在方块实体的
-     * {@code MetaTileEntity} 子标签里的，读根节点永远读不到。所以取一份 NBT 快照后要往里找一层。
-     */
-    private static int circuitOf(final IInterfaceHost host) {
-        final TileEntity tile = host.getTileEntity();
-        if (!(tile instanceof MetaTileEntityHolder)) { return -1; }
-        final MetaTileEntity mte = ((MetaTileEntityHolder) tile).getMetaTileEntity();
-        if (!(mte instanceof IGhostSlotConfigurable)
-                || !((IGhostSlotConfigurable) mte).hasGhostCircuitInventory()) { return -1; }
-        try {
-            final NBTTagCompound tag = new NBTTagCompound();
-            tile.writeToNBT(tag);
-            final NBTTagCompound inner = tag.hasKey("MetaTileEntity", 10)
-                    ? tag.getCompoundTag("MetaTileEntity") : tag;
-            return inner.hasKey("GhostCircuit", 1) ? inner.getByte("GhostCircuit") : -1;
-        } catch (final RuntimeException unsupported) {
-            return -1;
         }
     }
 

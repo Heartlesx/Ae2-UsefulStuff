@@ -89,7 +89,93 @@ public final class PatternUploadClient {
     private static String statusText;
     private static long statusUntil;
 
+    /** 行高要放得下两行文字（名称 / 位置+空槽）和右侧 16px 图标。 */
+    private static final int ROW_HEIGHT = 30;
+    private static final int MAIN_WIDTH = 320;
+    private static final int MAPPING_WIDTH = 360;
+    /** 面板与屏幕边缘的最小距离，窄 GUI 下按此收缩。 */
+    private static final int SCREEN_MARGIN = 10;
+
+    // 原版容器界面配色：硬边、无渐变。
+    private static final int COL_OUTLINE = 0xFF1B1B1B;
+    private static final int COL_FACE = 0xFFC6C6C6;
+    private static final int COL_HIGHLIGHT = 0xFFFFFFFF;
+    private static final int COL_SHADOW = 0xFF555555;
+    private static final int COL_FIELD = 0xFF8B8B8B;
+    private static final int COL_FIELD_SHADOW = 0xFF373737;
+    private static final int COL_ROW = 0xFFC6C6C6;
+    private static final int COL_ROW_HOVER = 0xFFD9E4E6;
+    private static final int COL_ROW_DIM = 0xFFAFAFAF;
+    private static final int COL_TEXT = 0xFF202020;
+    private static final int COL_TEXT_DIM = 0xFF4A4A4A;
+    private static final int COL_INPUT = 0xFFFFFFFF;
+    private static final int COL_INPUT_IDLE = 0xFFE4E4E4;
+
     private PatternUploadClient() {
+    }
+
+    /** 原版容器面板：黑描边、灰底面、左上高光 / 右下阴影，全部一像素硬边。 */
+    private static void panel(final int x, final int y, final int width, final int height) {
+        Gui.drawRect(x, y, x + width, y + height, COL_OUTLINE);
+        Gui.drawRect(x + 1, y + 1, x + width - 1, y + height - 1, COL_FACE);
+        Gui.drawRect(x + 1, y + 1, x + width - 1, y + 2, COL_HIGHLIGHT);
+        Gui.drawRect(x + 1, y + 1, x + 2, y + height - 1, COL_HIGHLIGHT);
+        Gui.drawRect(x + 1, y + height - 2, x + width - 1, y + height - 1, COL_SHADOW);
+        Gui.drawRect(x + width - 2, y + 1, x + width - 1, y + height - 1, COL_SHADOW);
+    }
+
+    /** 凹槽：左上压暗、右下提亮，用来做列表区和输入框底。 */
+    private static void inset(final int x, final int y, final int width, final int height, final int fill) {
+        Gui.drawRect(x, y, x + width, y + height, fill);
+        Gui.drawRect(x, y, x + width, y + 1, COL_FIELD_SHADOW);
+        Gui.drawRect(x, y, x + 1, y + height, COL_FIELD_SHADOW);
+        Gui.drawRect(x + width - 1, y, x + width, y + height, COL_HIGHLIGHT);
+        Gui.drawRect(x, y + height - 1, x + width, y + height, COL_HIGHLIGHT);
+    }
+
+    /** 刻线：上暗下亮的一像素分隔线（原版标题栏下那条）。 */
+    private static void groove(final int x, final int y, final int width) {
+        Gui.drawRect(x, y, x + width, y + 1, COL_SHADOW);
+        Gui.drawRect(x, y + 1, x + width, y + 2, COL_HIGHLIGHT);
+    }
+
+    /** 列表行：凸起在凹槽之上的浅色块，左上提亮、右下压暗。 */
+    private static void row(final int x, final int y, final int width, final int fill) {
+        Gui.drawRect(x, y, x + width, y + ROW_HEIGHT, fill);
+        Gui.drawRect(x, y, x + width, y + 1, COL_HIGHLIGHT);
+        Gui.drawRect(x, y, x + 1, y + ROW_HEIGHT, COL_HIGHLIGHT);
+        Gui.drawRect(x + width - 1, y, x + width, y + ROW_HEIGHT, COL_SHADOW);
+        Gui.drawRect(x, y + ROW_HEIGHT - 1, x + width, y + ROW_HEIGHT, COL_SHADOW);
+    }
+
+    /** 文字在输入框内的左内缩量；与 GuiTextField 开启自带背景时的 x+4 一致。 */
+    static int inputTextPadX() {
+        return 4;
+    }
+
+    /** 文字在输入框内的上内缩量；与 GuiTextField 开启自带背景时的 (height-8)/2 一致。 */
+    static int inputTextPadY(final int height) {
+        return (height - 8) / 2;
+    }
+
+    /** 输入框：凹底加一圈边框，聚焦时边框变白、底色变亮。 */
+    private static void input(final GuiTextField field, final int x, final int y, final int width,
+            final int height, final boolean enabled) {
+        field.x = x;
+        field.y = y;
+        field.width = width;
+        final int border = !enabled ? COL_SHADOW : field.isFocused() ? COL_HIGHLIGHT : COL_FACE;
+        final int fill = !enabled ? COL_FIELD : field.isFocused() ? COL_INPUT : COL_INPUT_IDLE;
+        Gui.drawRect(x - 2, y - 2, x + width + 2, y + height + 2, COL_OUTLINE);
+        Gui.drawRect(x - 1, y - 1, x + width + 1, y + height + 1, border);
+        inset(x, y, width, height, fill);
+        // GuiTextField 只在开启自带背景时才算居中（x+4 / y+(height-8)/2），关掉背景就退化成贴顶贴边。
+        // 背景由上面自绘，所以绘制期间临时把坐标挪到它本该在的位置，画完还原——mouseClicked 用的是原始坐标。
+        field.x = x + inputTextPadX();
+        field.y = y + inputTextPadY(height);
+        field.drawTextBox();
+        field.x = x;
+        field.y = y;
     }
 
     @SubscribeEvent
@@ -221,7 +307,7 @@ public final class PatternUploadClient {
         autoEnabled = enabled;
         mappings = new ArrayList<>(saved);
         if (toggleButton != null) {
-            toggleButton.displayString = autoEnabled ? "\u2611" : "\u2610";
+            toggleButton.displayString = autoEnabled ? "\u25A0" : "\u25A1";
         }
     }
 
@@ -297,41 +383,46 @@ public final class PatternUploadClient {
         final boolean tryAuto = pendingAuto && autoEnabled && !categoryUid.isEmpty()
                 && (!PatternCategory.requiresMoldMapping(output.getStack()) || saved != null);
         pendingAuto = false;
-        if (tryAuto) {
-            final TargetInfo target = TargetInfo.findByName(targets, suggestedName,
-                    PatternUploadClient::localizedName);
-            if (target != null && target.freeSlots > 0) {
-                closeOverlay();
-                PatternUploadNetwork.upload(target.key);
-                return;
-            }
-        }
-        search = new GuiTextField(0, mc.fontRenderer, 0, 0, 80, 18);
+        search = new GuiTextField(0, mc.fontRenderer, 0, 0, 80, 16);
         search.setMaxStringLength(256);
         search.setEnableBackgroundDrawing(false);
         search.setTextColor(0xFF18292D);
         search.setText(TextFormatting.getTextWithoutFormattingCodes(localizedName(suggestedName)));
         lastSearchText = search.getText();
         filter();
-        closeButton = new GuiButton(0, 0, 0, 16, 16, "x");
+        if (tryAuto) {
+            // 未保存映射时只能自动上传"过滤后恰好一行且完整同名"的组；显式映射不受行数限制。
+            final TargetInfo target = saved == null
+                    ? TargetInfo.findByName(filtered, suggestedName, true, PatternUploadClient::localizedName)
+                    : TargetInfo.findByName(targets, suggestedName, false, PatternUploadClient::localizedName);
+            if (target != null && target.freeSlots > 0) {
+                closeOverlay();
+                PatternUploadNetwork.upload(target.key);
+                return;
+            }
+        }
+        closeButton = new GuiButton(0, 0, 0, 20, 20, "x");
         prevButton = new GuiButton(1, 0, 0, 20, 20, "<");
         nextButton = new GuiButton(2, 0, 0, 20, 20, ">");
-        backButton = new GuiButton(3, 0, 0, 16, 16, "<");
-        locateButton = new GuiButton(4, 0, 0, 16, 16, "\u25CE");
-        bindButton = new GuiButton(5, 0, 0, 16, 16, "+");
-        mappingButton = new GuiButton(6, 0, 0, 16, 16, "\u2699");
-        toggleButton = new GuiButton(7, 0, 0, 16, 16, autoEnabled ? "\u2611" : "\u2610");
-        saveButton = new GuiButton(8, 0, 0, 16, 16, "\u2713");
-        deleteButton = new GuiButton(9, 0, 0, 16, 16, "x");
-        renameButton = new GuiButton(10, 0, 0, 16, 16, "\u270E");
+        backButton = new GuiButton(3, 0, 0, 20, 20, "<");
+        locateButton = new GuiButton(4, 0, 0, 20, 20, "\u25CE");
+        bindButton = new GuiButton(5, 0, 0, 20, 20, "+");
+        mappingButton = new GuiButton(6, 0, 0, 20, 20, "\u2261");
+        toggleButton = new GuiButton(7, 0, 0, 20, 20, autoEnabled ? "\u25A0" : "\u25A1");
+        saveButton = new GuiButton(8, 0, 0, 20, 20, "\u221A");
+        deleteButton = new GuiButton(9, 0, 0, 20, 20, "x");
+        renameButton = new GuiButton(10, 0, 0, 20, 20, "\u270E");
         nameField = new GuiTextField(3, mc.fontRenderer, 0, 0, 80, 16);
         nameField.setMaxStringLength(32);
+        nameField.setEnableBackgroundDrawing(false);
         renamingGroup = null;
         renamingMember = null;
-        uidField = new GuiTextField(1, mc.fontRenderer, 0, 0, 80, 14);
+        uidField = new GuiTextField(1, mc.fontRenderer, 0, 0, 80, 16);
         uidField.setMaxStringLength(128);
-        targetField = new GuiTextField(2, mc.fontRenderer, 0, 0, 80, 14);
+        uidField.setEnableBackgroundDrawing(false);
+        targetField = new GuiTextField(2, mc.fontRenderer, 0, 0, 80, 16);
         targetField.setMaxStringLength(256);
+        targetField.setEnableBackgroundDrawing(false);
         uidField.setText(categoryUid);
         targetField.setText("");
         editingUid = null;
@@ -377,90 +468,81 @@ public final class PatternUploadClient {
 
         GlStateManager.disableLighting();
         GlStateManager.disableDepth();
-        Gui.drawRect(layout.x - 1, layout.y - 1, layout.x + layout.width + 1,
-                layout.y + layout.height + 1, 0xFF607579);
-        Gui.drawRect(layout.x, layout.y, layout.x + layout.width,
-                layout.y + layout.height, 0xFFC9D2D3);
+        panel(layout.x, layout.y, layout.width, layout.height);
         mc.fontRenderer.drawString(mc.fontRenderer.trimStringToWidth(
                 I18n.format(locatingGroup == null ? "ae2us.upload.title" : "ae2us.locate.select"),
-                layout.width - 82), layout.x + 10, layout.y + 10, 0xFF18292D);
+                layout.width - 112), layout.x + 10, layout.y + 8, COL_TEXT);
+        groove(layout.x + 8, layout.y + 24, layout.width - 16);
         if (locatingGroup == null) {
-            Gui.drawRect(search.x - 2, search.y - 2, search.x + search.width + 2,
-                    search.y + search.height + 2, 0xFF607579);
-            Gui.drawRect(search.x - 1, search.y - 1, search.x + search.width + 1,
-                    search.y + search.height + 1, 0xFFF7FAFA);
-            search.drawTextBox();
+            input(search, search.x, search.y, search.width, search.height, true);
         } else {
             mc.fontRenderer.drawString(mc.fontRenderer.trimStringToWidth(localizedName(locatingGroup.name),
-                    layout.width - 20), layout.x + 10, layout.y + 34, 0xFF34494E);
+                    layout.width - 20), layout.x + 10, layout.y + 33, COL_TEXT_DIM);
         }
+
+        // 列表区是一整块凹槽，行是压在上面的凸起小块。
+        final int rowX = layout.rowX();
+        final int rowW = layout.rowW();
+        inset(rowX, layout.listY - 2, rowW, layout.rows * ROW_HEIGHT + 4, COL_FIELD);
 
         final int start = page * layout.rows;
         if (total == 0) {
-            mc.fontRenderer.drawString(I18n.format("ae2us.upload.empty"), layout.x + 10,
-                    layout.listY + 7, 0xFF3E565A);
+            mc.fontRenderer.drawString(I18n.format("ae2us.upload.empty"), rowX + 8,
+                    layout.listY + 7, COL_TEXT_DIM);
         }
+        final int iconY = (ROW_HEIGHT - Layout.BUTTON) / 2;
         boolean locateHovered = false;
         boolean bindHovered = false;
         boolean renameHovered = false;
         for (int i = 0; i < layout.rows && start + i < total; i++) {
-            final int rowY = layout.listY + i * 24;
-            final boolean hovered = mouseX >= layout.x + 7 && mouseX < layout.x + layout.width - 7
-                    && mouseY >= rowY && mouseY < rowY + 23;
+            final int rowY = layout.rowY(i);
+            final boolean hovered = mouseX >= rowX && mouseX < rowX + rowW
+                    && mouseY >= rowY && mouseY < rowY + ROW_HEIGHT;
             final boolean uploadable = locatingGroup == null && patternReady
                     && filtered.get(start + i).freeSlots > 0;
-            Gui.drawRect(layout.x + 7, rowY, layout.x + layout.width - 7, rowY + 23,
-                    hovered ? 0xFFCADBDD : uploadable || locatingGroup != null ? 0xFFE7EBEB : 0xFFDCE0E0);
+            row(rowX, rowY, rowW,
+                    hovered ? COL_ROW_HOVER : uploadable || locatingGroup != null ? COL_ROW : COL_ROW_DIM);
+            renameButton.x = layout.renameX();
+            renameButton.y = rowY + iconY;
+            bindButton.x = layout.bindX();
+            bindButton.y = rowY + iconY;
+            locateButton.x = layout.locateX();
+            locateButton.y = rowY + iconY;
+            final int textX = rowX + 6;
+            final int textW = layout.renameX() - 6 - textX;
             if (locatingGroup == null) {
                 final TargetInfo target = filtered.get(start + i);
                 if (renamingGroup == target && renamingMember == null) {
-                    nameField.x = layout.x + 12;
-                    nameField.y = rowY + 3;
-                    nameField.width = layout.width - 82;
-                    nameField.drawTextBox();
+                    input(nameField, textX, rowY + 7, textW, 16, true);
                 } else {
                     final String count = " \u00D7" + target.count;
                     final String name = mc.fontRenderer.trimStringToWidth(
                             TextFormatting.getTextWithoutFormattingCodes(localizedName(target.name)),
-                            layout.width - 88 - mc.fontRenderer.getStringWidth(count)) + count;
+                            textW - mc.fontRenderer.getStringWidth(count)) + count;
                     final String detail = target.location.isEmpty()
                             ? I18n.format("ae2us.upload.free", target.freeSlots)
                             : target.location + "  " + I18n.format("ae2us.upload.free", target.freeSlots);
-                    mc.fontRenderer.drawString(name,
-                            layout.x + 12, rowY + 2, 0xFF192B30);
-                    mc.fontRenderer.drawString(mc.fontRenderer.trimStringToWidth(detail, layout.width - 88),
-                            layout.x + 12, rowY + 13, 0xFF4B5E62);
+                    mc.fontRenderer.drawString(name, textX, rowY + 6, COL_TEXT);
+                    mc.fontRenderer.drawString(mc.fontRenderer.trimStringToWidth(detail, textW),
+                            textX, rowY + 16, COL_TEXT_DIM);
                 }
-                bindButton.x = layout.x + layout.width - 46;
-                bindButton.y = rowY + 3;
                 bindButton.enabled = !categoryUid.isEmpty();
                 bindButton.drawButton(mc, mouseX, mouseY, event.getRenderPartialTicks());
                 bindHovered |= bindButton.isMouseOver();
             } else {
                 final MemberInfo member = locatingGroup.members.get(start + i);
                 if (renamingMember == member) {
-                    nameField.x = layout.x + 12;
-                    nameField.y = rowY + 3;
-                    nameField.width = layout.width - 82;
-                    nameField.drawTextBox();
+                    input(nameField, textX, rowY + 7, textW, 16, true);
                 } else {
-                    // 配了幽灵电路的机器把电路号贴在坐标后面：同一种机器分好几台时，
-                    // 光看坐标分不清哪台是哪个配方分支，电路号才是玩家真正认的那个。
-                    final String where = member.circuit >= 0
-                            ? member.location + "  \u00b7  " + I18n.format("ae2us.upload.circuit", member.circuit)
-                            : member.location;
-                    mc.fontRenderer.drawString(mc.fontRenderer.trimStringToWidth(where, layout.width - 88),
-                            layout.x + 12, rowY + 2, 0xFF192B30);
-                    mc.fontRenderer.drawString(I18n.format("ae2us.upload.free", member.freeSlots),
-                            layout.x + 12, rowY + 13, 0xFF4B5E62);
+                    mc.fontRenderer.drawString(mc.fontRenderer.trimStringToWidth(member.location, textW),
+                            textX, rowY + 6, COL_TEXT);
+                    mc.fontRenderer.drawString(mc.fontRenderer.trimStringToWidth(
+                                    I18n.format("ae2us.upload.free", member.freeSlots), textW),
+                            textX, rowY + 16, COL_TEXT_DIM);
                 }
             }
-            renameButton.x = layout.x + layout.width - 66;
-            renameButton.y = rowY + 3;
             renameButton.drawButton(mc, mouseX, mouseY, event.getRenderPartialTicks());
             renameHovered |= renameButton.isMouseOver();
-            locateButton.x = layout.x + layout.width - 26;
-            locateButton.y = rowY + 3;
             locateButton.drawButton(mc, mouseX, mouseY, event.getRenderPartialTicks());
             locateHovered |= locateButton.isMouseOver();
         }
@@ -478,7 +560,7 @@ public final class PatternUploadClient {
         nextButton.drawButton(mc, mouseX, mouseY, event.getRenderPartialTicks());
         final String pages = (page + 1) + "/" + Math.max(1, (total + layout.rows - 1) / layout.rows);
         mc.fontRenderer.drawString(pages, layout.x + (layout.width - mc.fontRenderer.getStringWidth(pages)) / 2,
-                layout.footerY + 6, 0xFF34494E);
+                layout.footerY + 6, COL_TEXT_DIM);
         if (locateHovered) {
             drawTooltip("ae2us.locate.button", gui, mouseX, mouseY);
         } else if (renameHovered && renamingGroup == null) {
@@ -504,36 +586,38 @@ public final class PatternUploadClient {
         final int mouseY = event.getMouseY();
         GlStateManager.disableLighting();
         GlStateManager.disableDepth();
-        Gui.drawRect(layout.x - 1, layout.y - 1, layout.x + layout.width + 1,
-                layout.y + layout.height + 1, 0xFF607579);
-        Gui.drawRect(layout.x, layout.y, layout.x + layout.width,
-                layout.y + layout.height, 0xFFC9D2D3);
-        mc.fontRenderer.drawString(I18n.format("ae2us.mapping.title"), layout.x + 10, layout.y + 10, 0xFF18292D);
-        mc.fontRenderer.drawString(I18n.format("ae2us.mapping.category"), layout.x + 10, layout.y + 28, 0xFF34494E);
-        mc.fontRenderer.drawString(I18n.format("ae2us.mapping.target"), layout.x + 10, layout.y + 55, 0xFF34494E);
-        uidField.drawTextBox();
-        targetField.drawTextBox();
+        panel(layout.x, layout.y, layout.width, layout.height);
+        mc.fontRenderer.drawString(I18n.format("ae2us.mapping.title"), layout.x + 10, layout.y + 8, COL_TEXT);
+        groove(layout.x + 8, layout.y + 24, layout.width - 16);
+        mc.fontRenderer.drawString(I18n.format("ae2us.mapping.category"), layout.x + 10, layout.y + 28, COL_TEXT_DIM);
+        mc.fontRenderer.drawString(I18n.format("ae2us.mapping.target"), layout.x + 10, layout.y + 60, COL_TEXT_DIM);
+        input(uidField, uidField.x, uidField.y, uidField.width, uidField.height, true);
+        input(targetField, targetField.x, targetField.y, targetField.width, targetField.height, true);
         saveButton.enabled = !uidField.getText().trim().isEmpty() && !targetField.getText().trim().isEmpty();
         deleteButton.enabled = mapping(uidField.getText().trim()) != null;
         saveButton.drawButton(mc, mouseX, mouseY, event.getRenderPartialTicks());
         deleteButton.drawButton(mc, mouseX, mouseY, event.getRenderPartialTicks());
 
+        final int rowX = layout.rowX();
+        final int rowW = layout.rowW();
+        inset(rowX, layout.listY - 2, rowW, layout.rows * ROW_HEIGHT + 4, COL_FIELD);
+
         final int start = page * layout.rows;
         if (total == 0) {
-            mc.fontRenderer.drawString(I18n.format("ae2us.mapping.empty"), layout.x + 10,
-                    layout.listY + 7, 0xFF3E565A);
+            mc.fontRenderer.drawString(I18n.format("ae2us.mapping.empty"), rowX + 8,
+                    layout.listY + 7, COL_TEXT_DIM);
         }
         for (int i = 0; i < layout.rows && start + i < total; i++) {
             final Mapping mapping = mappings.get(start + i);
-            final int rowY = layout.listY + i * 24;
-            final boolean hovered = mouseX >= layout.x + 7 && mouseX < layout.x + layout.width - 7
-                    && mouseY >= rowY && mouseY < rowY + 23;
-            Gui.drawRect(layout.x + 7, rowY, layout.x + layout.width - 7, rowY + 23,
-                    hovered ? 0xFFCADBDD : 0xFFE7EBEB);
+            final int rowY = layout.rowY(i);
+            final boolean hovered = mouseX >= rowX && mouseX < rowX + rowW
+                    && mouseY >= rowY && mouseY < rowY + ROW_HEIGHT;
+            row(rowX, rowY, rowW, hovered ? COL_ROW_HOVER : COL_ROW);
+            final int textW = rowW - 12;
             mc.fontRenderer.drawString(mc.fontRenderer.trimStringToWidth(mapping.title + "  >  " + localizedName(mapping.name),
-                    layout.width - 24), layout.x + 12, rowY + 2, 0xFF192B30);
-            mc.fontRenderer.drawString(mc.fontRenderer.trimStringToWidth(mapping.uid, layout.width - 24),
-                    layout.x + 12, rowY + 13, 0xFF4B5E62);
+                    textW), rowX + 6, rowY + 6, COL_TEXT);
+            mc.fontRenderer.drawString(mc.fontRenderer.trimStringToWidth(mapping.uid, textW),
+                    rowX + 6, rowY + 16, COL_TEXT_DIM);
         }
         closeButton.drawButton(mc, mouseX, mouseY, event.getRenderPartialTicks());
         backButton.drawButton(mc, mouseX, mouseY, event.getRenderPartialTicks());
@@ -543,7 +627,7 @@ public final class PatternUploadClient {
         nextButton.drawButton(mc, mouseX, mouseY, event.getRenderPartialTicks());
         final String pages = (page + 1) + "/" + Math.max(1, (total + layout.rows - 1) / layout.rows);
         mc.fontRenderer.drawString(pages, layout.x + (layout.width - mc.fontRenderer.getStringWidth(pages)) / 2,
-                layout.footerY + 6, 0xFF34494E);
+                layout.footerY + 6, COL_TEXT_DIM);
         if (saveButton.isMouseOver()) {
             drawTooltip("ae2us.mapping.save", event.getGui(), mouseX, mouseY);
         } else if (deleteButton.isMouseOver()) {
@@ -582,6 +666,15 @@ public final class PatternUploadClient {
         final int firstY = event.getGui().height - 24 - (lines.size() - 1) * 10;
         GlStateManager.disableLighting();
         GlStateManager.disableDepth();
+        // 状态文字保持原位与生命周期不变，只在背后垫一块半透明凹槽，压住底下的界面提高可读性。
+        int blockW = 0;
+        for (final String line : lines) {
+            blockW = Math.max(blockW, mc.fontRenderer.getStringWidth(line));
+        }
+        final int blockX = (event.getGui().width - blockW) / 2;
+        final int blockY = firstY - 3;
+        Gui.drawRect(blockX - 4, blockY, blockX + blockW + 4, blockY + lines.size() * 10 + 4, 0xC0000000);
+        Gui.drawRect(blockX - 4, blockY, blockX + blockW + 4, blockY + 1, 0xFF555555);
         for (int i = 0; i < lines.size(); i++) {
             final String line = lines.get(i);
             mc.fontRenderer.drawStringWithShadow(line,
@@ -615,16 +708,15 @@ public final class PatternUploadClient {
             handleMappingMouse(mc, layout, mouseX, mouseY);
             return;
         }
-        final boolean inRows = mouseY >= layout.listY && mouseY < layout.listY + layout.rows * 24
-                && mouseX >= layout.x + 7 && mouseX < layout.x + layout.width - 7;
+        final boolean inRows = layout.inRows(mouseX, mouseY);
         if (renamingGroup != null) {
             if (nameField != null && mouseX >= nameField.x && mouseX < nameField.x + nameField.width
                     && mouseY >= nameField.y && mouseY < nameField.y + nameField.height) {
                 nameField.mouseClicked(mouseX, mouseY, 0);
                 return;
             }
-            if (inRows && mouseX >= layout.x + layout.width - 66 && mouseX < layout.x + layout.width - 50) {
-                beginRename(page * layout.rows + (mouseY - layout.listY) / 24);
+            if (inRows && layout.hit(mouseX, mouseY, layout.renameX())) {
+                beginRename(page * layout.rows + layout.rowAt(mouseY));
                 return;
             }
             cancelRename();
@@ -653,7 +745,7 @@ public final class PatternUploadClient {
         } else if (locatingGroup == null && toggleButton.mousePressed(mc, mouseX, mouseY)) {
             playClickSound();
             autoEnabled = !autoEnabled;
-            toggleButton.displayString = autoEnabled ? "\u2611" : "\u2610";
+            toggleButton.displayString = autoEnabled ? "\u25A0" : "\u25A1";
             PatternUploadNetwork.setAutoEnabled(autoEnabled);
         } else if (locatingGroup != null && backButton.mousePressed(mc, mouseX, mouseY)) {
             playClickSound();
@@ -665,12 +757,10 @@ public final class PatternUploadClient {
         } else if (nextButton.enabled && nextButton.mousePressed(mc, mouseX, mouseY)) {
             playClickSound();
             changePage(1, layout);
-        } else if (mouseY >= layout.listY && mouseY < layout.listY + layout.rows * 24
-                && mouseX >= layout.x + 7 && mouseX < layout.x + layout.width - 7) {
-            final int index = page * layout.rows + (mouseY - layout.listY) / 24;
-            final int renameX = layout.x + layout.width - 66;
+        } else if (layout.inRows(mouseX, mouseY)) {
+            final int index = page * layout.rows + layout.rowAt(mouseY);
             if (locatingGroup != null && index < locatingGroup.members.size()) {
-                if (mouseX >= renameX && mouseX < renameX + 16) {
+                if (layout.hit(mouseX, mouseY, layout.renameX())) {
                     beginRename(locatingGroup, locatingGroup.members.get(index));
                 } else {
                     playClickSound();
@@ -680,16 +770,14 @@ public final class PatternUploadClient {
                 }
             } else if (locatingGroup == null && index < filtered.size()) {
                 final TargetInfo target = filtered.get(index);
-                final int iconX = layout.x + layout.width - 26;
-                final int bindX = layout.x + layout.width - 46;
-                if (mouseX >= renameX && mouseX < renameX + 16) {
+                if (layout.hit(mouseX, mouseY, layout.renameX())) {
                     beginRename(target, null);
-                } else if (mouseX >= bindX && mouseX < bindX + 16) {
+                } else if (layout.hit(mouseX, mouseY, layout.bindX())) {
                     if (!categoryUid.isEmpty()) {
                         playClickSound();
                         PatternUploadNetwork.saveMapping("", categoryUid, categoryTitle, target.name);
                     }
-                } else if (mouseX >= iconX && mouseX < iconX + 16) {
+                } else if (layout.hit(mouseX, mouseY, layout.locateX())) {
                     playClickSound();
                     if (target.members.size() == 1) {
                         final MemberInfo member = target.members.get(0);
@@ -746,9 +834,8 @@ public final class PatternUploadClient {
         } else if (nextButton.enabled && nextButton.mousePressed(mc, mouseX, mouseY)) {
             playClickSound();
             changePage(1, layout);
-        } else if (mouseY >= layout.listY && mouseY < layout.listY + layout.rows * 24
-                && mouseX >= layout.x + 7 && mouseX < layout.x + layout.width - 7) {
-            final int index = page * layout.rows + (mouseY - layout.listY) / 24;
+        } else if (layout.inRows(mouseX, mouseY)) {
+            final int index = page * layout.rows + layout.rowAt(mouseY);
             if (index < mappings.size()) {
                 playClickSound();
                 final Mapping selected = mappings.get(index);
@@ -934,7 +1021,33 @@ public final class PatternUploadClient {
         return I18n.hasKey(name + ".name") ? I18n.format(name + ".name") : name;
     }
 
+    /**
+     * 布局几何快照 {x, y, width, height, rows, listY, footerY, renameX, bindX, locateX, textWidth}。
+     * 供自检在无 GUI 环境下验算边界与重叠，不在游戏逻辑里使用。
+     */
+    static int[] geometry(final int screenWidth, final int screenHeight, final boolean mapping) {
+        final boolean wasMapping = mappingOpen;
+        mappingOpen = mapping;
+        try {
+            final Layout layout = new Layout(screenWidth, screenHeight);
+            return new int[]{layout.x, layout.y, layout.width, layout.height, layout.rows,
+                    layout.listY, layout.footerY, layout.renameX(), layout.bindX(), layout.locateX(),
+                    layout.renameX() - 6 - (layout.rowX() + 6)};
+        } finally {
+            mappingOpen = wasMapping;
+        }
+    }
+
     private static final class Layout {
+        /** 标题区（含搜索框或组名）；列表从它下面开始。 */
+        private static final int MAIN_HEAD = 54;
+        private static final int MAPPING_HEAD = 96;
+        /** 列表下方：分页按钮 + 页码。 */
+        private static final int FOOTER = 26;
+        /** 原版按钮固定 20x20，纹理才不会被截断。 */
+        private static final int BUTTON = 20;
+        private static final int ICON_PITCH = 22;
+
         private final int x;
         private final int y;
         private final int width;
@@ -944,41 +1057,91 @@ public final class PatternUploadClient {
         private final int footerY;
 
         private Layout(final GuiScreen gui) {
-            width = Math.min(mappingOpen ? 320 : 280, gui.width - 20);
-            rows = Math.max(1, Math.min(6, (gui.height - (mappingOpen ? 138 : 98)) / 24));
-            height = (mappingOpen ? 124 : 84) + rows * 24;
-            x = (gui.width - width) / 2;
-            y = (gui.height - height) / 2;
-            listY = y + (mappingOpen ? 92 : 52);
-            footerY = listY + rows * 24 + 4;
+            this(gui.width, gui.height);
+        }
+
+        /** 只依赖屏幕宽高，自检可以脱离 GUI 环境直接验算几何。 */
+        Layout(final int screenWidth, final int screenHeight) {
+            final int head = mappingOpen ? MAPPING_HEAD : MAIN_HEAD;
+            width = Math.min(mappingOpen ? MAPPING_WIDTH : MAIN_WIDTH, screenWidth - SCREEN_MARGIN * 2);
+            final int usable = Math.max(ROW_HEIGHT, screenHeight - SCREEN_MARGIN * 2 - head - FOOTER);
+            rows = Math.max(1, Math.min(6, usable / ROW_HEIGHT));
+            height = Math.min(head + rows * ROW_HEIGHT + FOOTER, screenHeight - SCREEN_MARGIN * 2);
+            x = (screenWidth - width) / 2;
+            y = (screenHeight - height) / 2;
+            listY = y + head;
+            // 面板被屏幕高度压扁时，页脚跟着上移，始终贴着面板底边内侧。
+            footerY = Math.min(listY + rows * ROW_HEIGHT + 4, y + height - FOOTER + 3);
+        }
+
+        /** 列表行左边缘（凹槽内缩 6px）。 */
+        private int rowX() {
+            return x + 6;
+        }
+
+        private int rowW() {
+            return width - 12;
+        }
+
+        /** 第 index 行的上边缘。 */
+        private int rowY(final int index) {
+            return listY + index * ROW_HEIGHT;
+        }
+
+        /** 鼠标所在行号；调用前须先确认落在列表范围内。 */
+        private int rowAt(final int mouseY) {
+            return (mouseY - listY) / ROW_HEIGHT;
+        }
+
+        private boolean inRows(final int mouseX, final int mouseY) {
+            return mouseX >= rowX() && mouseX < rowX() + rowW()
+                    && mouseY >= listY && mouseY < listY + rows * ROW_HEIGHT;
+        }
+
+        /** 行内三个操作图标：从右往左依次 定位 / 绑定 / 改名，定位贴齐行右缘内缩 4px。 */
+        private int renameX() {
+            return rowX() + rowW() - 4 - BUTTON - ICON_PITCH * 2;
+        }
+
+        private int bindX() {
+            return renameX() + ICON_PITCH;
+        }
+
+        private int locateX() {
+            return bindX() + ICON_PITCH;
+        }
+
+        private boolean hit(final int mouseX, final int mouseY, final int buttonX) {
+            return mouseX >= buttonX && mouseX < buttonX + BUTTON
+                    && mouseY >= listY && mouseY < listY + rows * ROW_HEIGHT;
         }
 
         private void placeControls() {
-            search.x = x + 10;
-            search.y = y + 29;
-            search.width = width - 20;
-            closeButton.x = x + width - 23;
-            closeButton.y = y + 6;
-            backButton.x = x + width - 43;
-            backButton.y = y + 6;
-            mappingButton.x = x + width - 43;
-            mappingButton.y = y + 6;
-            toggleButton.x = x + width - 63;
-            toggleButton.y = y + 6;
+            search.x = x + 11;
+            search.y = y + 32;
+            search.width = width - 22;
+            closeButton.x = x + width - 24;
+            closeButton.y = y + 4;
+            backButton.x = x + width - 46;
+            backButton.y = y + 4;
+            mappingButton.x = x + width - 46;
+            mappingButton.y = y + 4;
+            toggleButton.x = x + width - 68;
+            toggleButton.y = y + 4;
             prevButton.x = x + width / 2 - 55;
             prevButton.y = footerY;
             nextButton.x = x + width / 2 + 35;
             nextButton.y = footerY;
-            uidField.x = x + 10;
-            uidField.y = y + 39;
-            uidField.width = width - 20;
-            targetField.x = x + 10;
-            targetField.y = y + 66;
-            targetField.width = width - 70;
-            saveButton.x = x + width - 54;
-            saveButton.y = y + 65;
-            deleteButton.x = x + width - 30;
-            deleteButton.y = y + 65;
+            uidField.x = x + 11;
+            uidField.y = y + 40;
+            uidField.width = width - 22;
+            targetField.x = x + 11;
+            targetField.y = y + 72;
+            targetField.width = width - 74;
+            saveButton.x = x + width - 58;
+            saveButton.y = y + 70;
+            deleteButton.x = x + width - 34;
+            deleteButton.y = y + 70;
         }
     }
 
